@@ -1,0 +1,3 @@
+video_uid,type,s3_path,benchmarks
+77cc4654-4eec-44c6-af05-dbdf71f9a401,file,s3://ego4d-minnesota/public/v1/features/action_features/omnivore_video_swinl_fp16/77cc4654-4eec-44c6-af05-dbdf71f9a401.pt,[]
+3e08beb0-9108-4e77-b2ae-80f91ceac474,file,s3://ego4d-unict-milan/public/v1/features/action_features/omnivore_video_swinl_fp16/3e08beb0-9108-4e77-b2ae-80f91ceac474.pt,[FHO]
