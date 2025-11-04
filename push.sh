@@ -33,11 +33,8 @@ if [ "$branch" = "HEAD" ]; then
   exit 1
 fi
 
-echo "[push] Staging changes (excluding heavy artifacts)..."
-# Avoid traversing heavy dirs even if ignored
-git add -A -- . \
-  ':(exclude)runs' ':(exclude)logs' ':(exclude)outputs' ':(exclude)checkpoints' \
-  ':(exclude)data' ':(exclude)frames' ':(exclude)videos'
+echo "[push] Staging all changes..."
+git add -A
 
 if git diff --cached --quiet; then
   echo "[push] No changes to commit."
