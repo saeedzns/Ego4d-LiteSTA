@@ -2,6 +2,18 @@
 set -euo pipefail
 
 # Simple daily push script
+# - Accepts optional commit message as $1
+# - On Colab, you can enable a faster path by setting FAST_PUSH=1 which
+#   clones to /content and rsyncs code-only before pushing.
+
+MSG=${1:-}
+
+# If user requested fast path (e.g., on Colab), delegate to scripts/push_fast_colab.sh
+if [[ "${FAST_PUSH:-}" == "1" && -d "/content" && -f "scripts/push_fast_colab.sh" ]]; then
+  echo "[push] Using fast Colab path via scripts/push_fast_colab.sh"
+  WORKDIR="${WORKDIR:-$PWD}" bash scripts/push_fast_colab.sh "${MSG}"
+  exit 0
+fi
 
 # Keep SSH alive on flaky networks (e.g., Colab)
 export GIT_SSH_COMMAND="ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10"
@@ -21,15 +33,18 @@ if [ "$branch" = "HEAD" ]; then
   exit 1
 fi
 
-echo "[push] Staging all changes..."
-git add -A
+echo "[push] Staging changes (excluding heavy artifacts)..."
+# Avoid traversing heavy dirs even if ignored
+git add -A -- . \
+  ':(exclude)runs' ':(exclude)logs' ':(exclude)outputs' ':(exclude)checkpoints' \
+  ':(exclude)data' ':(exclude)frames' ':(exclude)videos'
 
 if git diff --cached --quiet; then
   echo "[push] No changes to commit."
   exit 0
 fi
 
-msg="chore: daily sync $(date -u +'%Y-%m-%d %H:%M:%SZ')"
+msg=${MSG:-"chore: daily sync $(date -u +'%Y-%m-%d %H:%M:%SZ')"}
 echo "[push] Committing with message: $msg"
 git commit -m "$msg" || true
 
