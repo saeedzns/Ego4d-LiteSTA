@@ -3,6 +3,13 @@ set -euo pipefail
 
 # Simple daily push script
 
+# Keep SSH alive on flaky networks (e.g., Colab)
+export GIT_SSH_COMMAND="ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10"
+
+# Optional: slightly better pack/compression defaults for large pushes
+git config --global core.compression 9 >/dev/null 2>&1 || true
+git config --global pack.threads 2 >/dev/null 2>&1 || true
+
 if ! git rev-parse --git-dir >/dev/null 2>&1; then
   echo "Not a git repository." >&2
   exit 1
@@ -34,4 +41,3 @@ echo "[push] Pushing to origin/$branch..."
 git push -u origin "$branch"
 
 echo "[push] Done."
-
