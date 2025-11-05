@@ -2,14 +2,15 @@
 set -euo pipefail
 
 # Fast push from Colab by cloning into /content (fast local disk),
-# syncing only code/config files from Drive, then committing & pushing.
+# syncing code/config files from Drive, then committing & pushing.
 #
 # Usage:
 #   export WORKDIR=/content/drive/MyDrive/Ego4d-LiteSTA
 #   bash scripts/push_fast_colab.sh "optional commit message"
 #
 # Notes:
-# - Excludes heavy artifacts (runs/, logs/, outputs/, frames/, videos/, *.pt, *.mp4, *.jpg, etc.)
+# - By default excludes heavy artifacts (runs/, logs/, outputs/, frames/, videos/, *.pt, *.mp4, *.jpg, etc.)
+# - To include heavy artifacts too, set FAST_PUSH_INCLUDE_HEAVY=1
 # - Requires that $WORKDIR points at your Drive repo with a configured origin remote.
 
 MSG=${1:-}
@@ -41,16 +42,24 @@ rm -rf "$TMP"
 echo "[fast-push] Cloning $ORIGIN_URL (branch $BRANCH) into $TMP ..."
 git clone --depth 1 -b "$BRANCH" "$ORIGIN_URL" "$TMP" >/dev/null 2>&1 || git clone --depth 1 "$ORIGIN_URL" "$TMP"
 
-echo "[fast-push] Rsync code from Drive → /content (excluding heavy artifacts) ..."
-rsync -a --delete \
-  --exclude='.git/' \
-  --exclude='.ipynb_checkpoints/' \
-  --exclude='runs/' --exclude='logs/' --exclude='outputs/' --exclude='checkpoints/' \
-  --exclude='data/' --exclude='frames/' --exclude='videos/' \
-  --exclude='*.mp4' --exclude='*.webm' --exclude='*.mkv' \
-  --exclude='*.jpg' --exclude='*.jpeg' --exclude='*.png' --exclude='*.bmp' --exclude='*.tif' --exclude='*.tiff' \
-  --exclude='*.pt' --exclude='*.pth' --exclude='*.ckpt' --exclude='*.onnx' --exclude='*.npz' --exclude='*.npy' \
-  "$WORKDIR"/ "$TMP"/
+if [[ "${FAST_PUSH_INCLUDE_HEAVY:-}" == "1" ]]; then
+  echo "[fast-push] Rsync ALL from Drive → /content (including heavy artifacts) ..."
+  rsync -a --delete \
+    --exclude='.git/' \
+    --exclude='.ipynb_checkpoints/' \
+    "$WORKDIR"/ "$TMP"/
+else
+  echo "[fast-push] Rsync code from Drive → /content (excluding heavy artifacts) ..."
+  rsync -a --delete \
+    --exclude='.git/' \
+    --exclude='.ipynb_checkpoints/' \
+    --exclude='runs/' --exclude='logs/' --exclude='outputs/' --exclude='checkpoints/' \
+    --exclude='data/' --exclude='frames/' --exclude='videos/' \
+    --exclude='*.mp4' --exclude='*.webm' --exclude='*.mkv' \
+    --exclude='*.jpg' --exclude='*.jpeg' --exclude='*.png' --exclude='*.bmp' --exclude='*.tif' --exclude='*.tiff' \
+    --exclude='*.pt' --exclude='*.pth' --exclude='*.ckpt' --exclude='*.onnx' --exclude='*.npz' --exclude='*.npy' \
+    "$WORKDIR"/ "$TMP"/
+fi
 
 cd "$TMP"
 echo "[fast-push] Staging changes ..."
@@ -67,4 +76,3 @@ git commit -m "$COMMIT_MSG" >/dev/null 2>&1 || true
 echo "[fast-push] Pushing to origin/$BRANCH ..."
 git push origin "$BRANCH"
 echo "[fast-push] Done."
-
