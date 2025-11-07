@@ -1,19 +1,41 @@
-# Ignore large datasets and generated files
-*.json
-*.mp4
-*.zip
-*.tar
-*.gz
-*.pth
-*.pt
-*.npy
-*.npz
-*.pkl
-*.bin
-*.h5
-*.avi
-*.mov
-# Keep config and notebooks
+# === General ===
+__pycache__/
+*.py[cod]
+*.so
+*.o
+*.exe
+*.log
+*.tmp
+
+# === Notebooks and small configs allowed ===
 !*.ipynb
 !*.py
+!*.json
 !requirements.txt
+
+# === Large artifacts (datasets, models, archives) ===
+# Ignore large compressed or binary files over ~40MB
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.gz
+*.rar
+*.7z
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.mp3
+*.wav
+*.pt
+*.pth
+*.bin
+*.npy
+*.npz
+*.h5
+*.pkl
+
+# Keep source and metadata
+!.gitattributes
+!.gitignore
