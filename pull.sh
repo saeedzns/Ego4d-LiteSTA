@@ -3,6 +3,13 @@ set -euo pipefail
 
 # Simple daily pull script
 
+# If on Colab and FAST_PULL is set, use fast path script
+if [[ "${FAST_PULL:-}" == "1" && -d "/content" && -f "scripts/pull_fast_colab.sh" ]]; then
+  echo "[pull] Using fast Colab path via scripts/pull_fast_colab.sh"
+  WORKDIR="${WORKDIR:-$PWD}" bash scripts/pull_fast_colab.sh
+  exit 0
+fi
+
 # Keep SSH alive on flaky networks (e.g., Colab)
 export GIT_SSH_COMMAND="ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10"
 
