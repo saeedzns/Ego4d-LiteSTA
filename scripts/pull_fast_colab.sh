@@ -23,8 +23,10 @@ if [[ ! -d "$WORKDIR/.git" ]]; then
   exit 1
 fi
 
-# Keep SSH alive; improve pack reliability
+# Keep SSH alive; improve pack reliability; avoid interactive prompts
 export GIT_SSH_COMMAND="ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10"
+export GIT_EDITOR=true
+export GIT_TERMINAL_PROMPT=0
 git config --global core.compression 9 >/dev/null 2>&1 || true
 git config --global pack.threads 2 >/dev/null 2>&1 || true
 
@@ -40,9 +42,21 @@ if [[ "${FAST_PULL_AUTOSTASH:-}" == "1" ]]; then
   fi
 fi
 
-echo "[fast-pull] Fetching and rebasing onto origin/$BRANCH ..."
+echo "[fast-pull] Fetching latest for $BRANCH ..."
 git -C "$WORKDIR" fetch --prune origin
-git -C "$WORKDIR" pull --rebase --autostash origin "$BRANCH" || true
+
+# Prefer fast-forward when no local commits; else rebase non-interactively
+set +e
+AB=$(git -C "$WORKDIR" rev-list --left-right --count origin/"$BRANCH"...HEAD 2>/dev/null)
+set -e
+L=${AB%% *}; R=${AB##* }
+if [ "${R:-1}" = "0" ]; then
+  echo "[fast-pull] Fast-forward merge from origin/$BRANCH (behind ${L:-?})"
+  git -C "$WORKDIR" merge --ff-only origin/"$BRANCH"
+else
+  echo "[fast-pull] Rebase onto origin/$BRANCH (ours ahead ${R:-?})"
+  git -C "$WORKDIR" pull --rebase --autostash origin "$BRANCH" || true
+fi
 
 echo "[fast-pull] Latest commit:"
 git -C "$WORKDIR" --no-pager log -1 --oneline

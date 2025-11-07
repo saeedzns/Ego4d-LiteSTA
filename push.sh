@@ -15,8 +15,10 @@ if [[ "${FAST_PUSH:-}" == "1" && -d "/content" && -f "scripts/push_fast_colab.sh
   exit 0
 fi
 
-# Keep SSH alive on flaky networks (e.g., Colab)
+# Keep SSH alive on flaky networks (e.g., Colab) and avoid interactive prompts
 export GIT_SSH_COMMAND="ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10"
+export GIT_EDITOR=true
+export GIT_TERMINAL_PROMPT=0
 
 # Optional: slightly better pack/compression defaults for large pushes
 git config --global core.compression 9 >/dev/null 2>&1 || true
