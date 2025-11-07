@@ -11,6 +11,7 @@ __pycache__/
 !*.ipynb
 !*.py
 !requirements.txt
+.ipynb_checkpoints/
 
 # === Large artifacts (datasets, models, archives) ===
 # Ignore large compressed or binary files over ~40MB
