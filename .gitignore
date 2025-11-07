@@ -10,7 +10,6 @@ __pycache__/
 # === Notebooks and small configs allowed ===
 !*.ipynb
 !*.py
-!*.json
 !requirements.txt
 
 # === Large artifacts (datasets, models, archives) ===
@@ -35,6 +34,7 @@ __pycache__/
 *.npz
 *.h5
 *.pkl
+*.json
 
 # Keep source and metadata
 !.gitattributes
