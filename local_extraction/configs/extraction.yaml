@@ -1,0 +1,110 @@
+# =============================================================================
+# Extraction Configuration — Frame & Label Extraction
+# =============================================================================
+# Settings for extracting frames from videos and building YOLO labels
+
+# Inherit base config
+_base_: "base.yaml"
+
+# -----------------------------------------------------------------------------
+# Video Source Configuration
+# -----------------------------------------------------------------------------
+video:
+  # Root directory for videos
+  root: "${paths.colab_drive_root}/${version}/videos"
+  
+  # Supported extensions
+  extensions: [".mp4", ".mov", ".mkv"]
+  
+  # Recursive search for videos
+  recursive: true
+
+# -----------------------------------------------------------------------------
+# Frame Extraction Configuration
+# -----------------------------------------------------------------------------
+frames:
+  # Output directory
+  output_root: "${paths.frames_root}"
+  
+  # Extraction mode: 'all', 'keyframes', 'windows'
+  mode: "keyframes"
+  
+  # Frame naming
+  pad_digits: 7
+  extension: "jpg"
+  
+  # Quality settings
+  quality: 95  # JPEG quality (1-100)
+  
+  # Resize (null = keep original)
+  max_side: 540  # resize so max dimension is this
+  
+  # Specific UIDs to extract (null = all from sample CSV)
+  uids: null
+
+# -----------------------------------------------------------------------------
+# Sample CSV Configuration (for keyframes/windows modes)
+# -----------------------------------------------------------------------------
+sample_csv:
+  # Path to sample CSV (e.g., fho_sta_val_json.csv)
+  path: null
+  
+  # Column mappings
+  columns:
+    video_uid: "video_uid"
+    frame: "frame"
+    start_frame: "start_frame"
+    end_frame: "end_frame"
+
+# -----------------------------------------------------------------------------
+# YOLO Label Generation
+# -----------------------------------------------------------------------------
+labels:
+  # Output directory
+  output_root: "${paths.labels_root}"
+  
+  # Label space organization: 'clips' or 'videos'
+  space: "clips"
+  
+  # Class mapping
+  single_class: true  # all objects as class 0 (next_active)
+  
+  # Box format: 'yolo' (normalized xywh) or 'coco' (absolute xyxy)
+  format: "yolo"
+
+# -----------------------------------------------------------------------------
+# Toolkit YOLO Dataset Assembly
+# -----------------------------------------------------------------------------
+toolkit_yolo:
+  # Output directory for assembled dataset
+  output_root: "${paths.local_extraction}/toolkit_yolo/datasets"
+  
+  # Dataset naming
+  run_name: null  # null = auto-generate with timestamp
+  
+  # Train/val split
+  split:
+    enabled: true
+    train_ratio: 0.85
+    val_ratio: 0.15
+    shuffle: true
+
+# -----------------------------------------------------------------------------
+# FFmpeg Configuration
+# -----------------------------------------------------------------------------
+ffmpeg:
+  # Path to ffmpeg (null = use system PATH)
+  path: null
+  
+  # Extraction settings
+  threads: 4
+  vsync: "vfr"
+
+# -----------------------------------------------------------------------------
+# Smoke Test Configuration
+# -----------------------------------------------------------------------------
+smoke_test:
+  enabled: false
+  max_videos: 2
+  max_frames_per_video: 10
+  validate_pycache: true

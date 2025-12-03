@@ -1,0 +1,88 @@
+# =============================================================================
+# Track C Configuration — Training-Free RGTP Token Pruning
+# =============================================================================
+# Rollout-Guided Token Pruning for inference efficiency
+
+# Inherit base config
+_base_: "base.yaml"
+
+# -----------------------------------------------------------------------------
+# RGTP (Rollout-Guided Token Pruning) Configuration
+# -----------------------------------------------------------------------------
+rgtp:
+  enabled: true
+  
+  # Pruning rate: fraction of tokens to drop (0.0 = no pruning, 0.5 = drop 50%)
+  rate: 0.1
+  
+  # Minimum tokens to keep (safety floor)
+  min_keep: 2
+  
+  # Temporal decay for rollout vs motion blending
+  temporal_decay: 0.6
+  
+  # Logit fill for pruned tokens (very negative -> low probability)
+  logit_fill: -12.0
+
+# -----------------------------------------------------------------------------
+# Evaluation Configuration
+# -----------------------------------------------------------------------------
+evaluation:
+  # Checkpoint to evaluate (null = auto-detect latest)
+  checkpoint: null
+  
+  # Stage B run for candidates (null = auto-detect)
+  stageB_run: null
+  
+  # Val manifest (null = auto-detect)
+  val_manifest: null
+  
+  # Batch settings
+  batch_size: 1  # RGTP typically runs bs=1 for streaming
+  candidate_limit: 16
+  normalize_ttc: true
+
+# -----------------------------------------------------------------------------
+# Instrumentation (Latency/VRAM/FLOPs Profiling)
+# -----------------------------------------------------------------------------
+instrumentation:
+  enabled: true
+  
+  # What to measure
+  record_latency: true
+  record_vram: true
+  record_flops: true
+  
+  # CUDA events for precise timing
+  use_cuda_events: true
+  
+  # Benchmark settings
+  warmup_iters: 1
+  bench_iters: 5
+  bench_samples: 1
+
+# -----------------------------------------------------------------------------
+# Rate Sweep (for Pareto curves)
+# -----------------------------------------------------------------------------
+rate_sweep:
+  enabled: false
+  rates: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
+
+# -----------------------------------------------------------------------------
+# Output Configuration
+# -----------------------------------------------------------------------------
+output:
+  runs_dir: "${paths.runs_root}/Track_C"
+  metrics_subdir: "metrics"
+  plots_subdir: "plots"
+
+# -----------------------------------------------------------------------------
+# Smoke Test Configuration
+# -----------------------------------------------------------------------------
+smoke_test:
+  enabled: false
+  max_samples: 5
+  validate_pycache: true
+  test_rates: [0.0, 0.3]
+  expected_outputs:
+    - "metrics/"

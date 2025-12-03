@@ -1,0 +1,178 @@
+# =============================================================================
+# Track B Configuration — Minimal Temporal Fusion
+# =============================================================================
+# Frame-Guided Temporal Pooling (FGTP) + Dual Cross-Attention Fusion
+
+# Inherit base config
+_base_: "base.yaml"
+
+# -----------------------------------------------------------------------------
+# Model Architecture
+# -----------------------------------------------------------------------------
+model:
+  # Tokenizer (backbone for feature extraction)
+  tokenizer:
+    # Video backbone: "resnet18" (2D per-frame), "videomae_ego" (3D video encoder)
+    # - "resnet18": Current exocentric/web-pretrained 2D backbone (baseline)
+    # - "videomae_ego": In-domain egocentric VideoMAE encoder (requires pretrained weights)
+    video_backbone: "resnet18"
+    
+    backbone: "resnet18"
+    pretrained: true
+    img_size: 224
+    freeze_backbone: true
+    time_len: 8          # T frames in temporal window
+    time_stride: 2       # step between frames
+    
+    # VideoMAE-specific settings (only used when video_backbone="videomae_ego")
+    videomae:
+      weights_path: "${paths.local_extraction}/runs/VideoMAE/videomae_ego_encoder.pt"
+      patch_size: 16
+      tubelet_size: 2     # temporal patch size
+      embed_dim: 768
+      depth: 12
+      num_heads: 12
+      freeze_encoder: true
+  
+  # Projector (512 -> token_dim for resnet18, 768 -> token_dim for videomae)
+  projector:
+    in_dim: 512           # 512 for resnet18, 768 for videomae
+    out_dim: 256
+  
+  # Fusion module (FGTP + dual cross-attention)
+  fusion:
+    dim: 256
+    layers: 2
+    heads: 8
+    dropout: 0.1
+  
+  # Prediction head
+  head:
+    dim: 256
+    hidden: 256
+    num_classes: 2  # binary next-active
+    dropout: 0.1
+
+# -----------------------------------------------------------------------------
+# Multi-Task Learning
+# -----------------------------------------------------------------------------
+multi_task:
+  enabled: true
+  
+  # Task toggles
+  predict_noun: true
+  predict_verb: true
+  predict_ttc: true
+  
+  # TTC mode: 'reg' (regression) or 'bin' (classification)
+  ttc_mode: "reg"
+  ttc_bins: 5  # number of bins if ttc_mode='bin'
+  
+  # TTC bin thresholds for classification (seconds)
+  # Default bins: [0.0, 0.5), [0.5, 1.0), [1.0, 2.0), [2.0, +inf)
+  ttc_thresholds: [0.5, 1.0, 2.0]
+  
+  # Loss weights
+  loss_weights:
+    next_active: 1.5
+    noun: 0.25
+    verb: 0.25
+    ttc: 1.0
+
+# -----------------------------------------------------------------------------
+# Training Configuration
+# -----------------------------------------------------------------------------
+training:
+  # Mode: 'main' (full training) or 'demo' (quick test)
+  mode: "main"
+  
+  # Hyperparameters
+  epochs: 20
+  batch_size: 8
+  lr: 1.0e-3
+  min_lr: 1.0e-5
+  warmup_epochs: 1.0
+  
+  # Regularization
+  label_smoothing: 0.05
+  weight_decay: 0.01
+  
+  # Data
+  candidate_limit: 16
+  normalize_ttc: true
+  
+  # Checkpointing
+  save_epoch_checkpoints: true
+  save_best_checkpoint: true
+  
+  # Early stopping
+  early_stopping:
+    enabled: true
+    patience: 5
+    monitor: "mAP"
+    mode: "max"  # 'max' or 'min'
+  
+  # Evaluation
+  eval_every: 1
+  
+  # Mixed precision
+  amp: false
+
+# -----------------------------------------------------------------------------
+# Demo Mode Configuration
+# -----------------------------------------------------------------------------
+demo:
+  enabled: false
+  steps: 10
+  variant: "loader"  # 'loader' or 'standalone'
+  use_real_labels: true
+
+# -----------------------------------------------------------------------------
+# Evaluation Configuration
+# -----------------------------------------------------------------------------
+evaluation:
+  batch_size: 8
+  
+  # Metrics
+  compute_map: true
+  compute_ttc_mae: true
+  
+  # Visualization
+  save_overlays: true
+  topk_overlay: 3
+  
+  # Hotspot priors (PEAR-style)
+  hotspot_priors:
+    enabled: true
+    path: "${paths.local_extraction}/${version}/hotspot_priors_train_logodds_min10.json"
+    alpha: 0.3
+  
+  # CLIP re-ranking
+  clip_rerank:
+    enabled: true
+    model: "ViT-B/32"
+    weight: 0.3
+
+# -----------------------------------------------------------------------------
+# Data Sources
+# -----------------------------------------------------------------------------
+data:
+  # Stage B run for candidates (null = auto-detect latest)
+  stageB_run: null
+  
+  # Manifest paths (null = auto-detect)
+  train_manifest: null
+  val_manifest: null
+
+# -----------------------------------------------------------------------------
+# Smoke Test Configuration
+# -----------------------------------------------------------------------------
+smoke_test:
+  enabled: false
+  max_samples: 5
+  max_epochs: 1
+  validate_pycache: true
+  skip_save: true
+  expected_outputs:
+    - "checkpoints/"
+    - "metrics/"

@@ -1,0 +1,48 @@
+# =============================================================================
+# Ego4D-LiteSTA Base Configuration
+# =============================================================================
+# This file contains shared settings across all tracks.
+# Override in track-specific configs or via CLI/environment variables.
+
+# Version and data roots
+version: "v2"
+
+paths:
+  # Base paths (relative to repo root or absolute)
+  repo_root: "."
+  local_extraction: "local_extraction"
+  
+  # Data directories
+  frames_root: "${paths.local_extraction}/${version}/extracted_frames"
+  labels_root: "${paths.local_extraction}/${version}/yolo_labels_540"
+  manifests_root: "${paths.local_extraction}/${version}/manifests"
+  org_annotations: "${paths.local_extraction}/${version}/org_annotations"
+  
+  # Run outputs
+  runs_root: "${paths.local_extraction}/runs"
+  
+  # Colab-specific overrides (set via environment or runtime)
+  colab_drive_root: "/content/drive/MyDrive/ego4d_data"
+  colab_local_root: "/content"
+
+# Runtime environment detection
+runtime:
+  auto_detect_colab: true
+  device: "auto"  # 'auto', 'cuda', 'cpu'
+  num_workers: 0
+  pin_memory: false
+
+# Logging
+logging:
+  level: "INFO"
+  print_progress: true
+  use_tqdm: true
+
+# Demo/debug mode (shared across all tracks)
+demo:
+  enabled: false
+  max_samples: 50
+
+# Reproducibility
+seed: 42
+deterministic: true

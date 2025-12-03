@@ -1,0 +1,54 @@
+# =============================================================================
+# Track B Configuration — VideoMAE Ego (In-Domain Egocentric)
+# =============================================================================
+# This configuration uses the VideoMAE encoder pretrained on egocentric clips.
+# Requires running VideoMAE pretraining first:
+#   python -m trackB.videomae.videomae_pretrain --epochs 100
+#
+# Usage:
+#   python -m trackB.trackB_train_loader --config trackB_videomae_ego
+
+# Inherit from main trackB config
+_base_: "trackB.yaml"
+
+# Override model settings for VideoMAE
+model:
+  tokenizer:
+    # In-domain egocentric 3D video backbone
+    video_backbone: "videomae_ego"
+    
+    # VideoMAE encoder settings
+    videomae:
+      weights_path: "${paths.local_extraction}/runs/VideoMAE/videomae_ego_encoder.pt"
+      patch_size: 16
+      tubelet_size: 2
+      embed_dim: 768
+      depth: 12
+      num_heads: 12
+      freeze_encoder: true  # Freeze encoder weights during downstream training
+  
+  # VideoMAE encoder output is 768-dim
+  projector:
+    in_dim: 768
+    out_dim: 256
+
+# Training adjustments for VideoMAE
+training:
+  # May need slightly different LR for VideoMAE features
+  lr: 5.0e-4
+  # Warm up slightly longer for new backbone
+  warmup_epochs: 2.0
+
+# Training note
+_note: |
+  This is the ego-only VideoMAE configuration:
+  - Uses VideoMAE encoder pretrained on egocentric STA clips
+  - Self-supervised pretraining with masked autoencoding
+  - 3D spatiotemporal token extraction (vs 2D per-frame in baseline)
+  - This represents the "in-domain egocentric" approach in the thesis
+  
+  Prerequisites:
+  1. Run VideoMAE pretraining first:
+     python -m trackB.videomae.videomae_pretrain --epochs 100
+  2. Verify encoder checkpoint exists:
+     runs/VideoMAE/videomae_ego_encoder.pt

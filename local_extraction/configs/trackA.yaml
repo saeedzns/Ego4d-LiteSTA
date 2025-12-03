@@ -1,0 +1,84 @@
+# =============================================================================
+# Track A Configuration — Two-Stage STA Baseline
+# =============================================================================
+# Stage A: YOLO detector for candidate generation
+# Stage B: Head/reasoner for semantic prediction
+
+# Inherit base config
+_base_: "base.yaml"
+
+# -----------------------------------------------------------------------------
+# Stage A: Detector Configuration
+# -----------------------------------------------------------------------------
+stage_a:
+  # Detection mode: 'yolo' (Ultralytics) or 'oracle' (from ground-truth labels)
+  mode: "yolo"
+  
+  # Top-K candidates per image
+  k: 6
+  
+  # Frame selection
+  last_frame_only: true
+  max_images: null  # null = process all; set integer to cap
+  
+  # YOLO-specific settings
+  yolo:
+    weights: "${paths.local_extraction}/toolkit_yolo/runs/sta_yolov8s_singlecls_20251113_002330/weights/best.pt"
+    imgsz: 960
+    conf_thresh: 0.05
+    nms_iou: 0.45
+  
+  # Oracle mode (uses ground-truth labels)
+  oracle:
+    label_space: "clips"  # 'clips' or 'videos'
+  
+  # Output options
+  output:
+    save_per_image_csv: false
+    run_prefix: "trackA_stageA"
+
+# -----------------------------------------------------------------------------
+# Stage B: Head/Reasoner Configuration
+# -----------------------------------------------------------------------------
+stage_b:
+  # Candidates source (null = auto-detect latest Stage A run)
+  candidates_source: null
+  
+  # Cropping settings
+  crop_size: [256, 256]  # [W, H] or null for native size
+  keep_top_n: null       # null = keep all candidates
+  
+  # Evaluation with ground-truth labels
+  eval_with_labels: true
+  iou_thresh: 0.5
+  
+  # Head manifests
+  manifests:
+    use_clip_manifest: true
+    train: "${paths.manifests_root}/head_train_clip.json"
+    val: "${paths.manifests_root}/head_val_clip.json"
+  
+  # Output options
+  output:
+    write_head_train_val: true
+    write_semantics_in_manifest: true
+    write_back_to_stagea_summary: true
+    run_prefix: "trackA_stageB"
+
+# -----------------------------------------------------------------------------
+# K-Sweep Configuration (for recall optimization)
+# -----------------------------------------------------------------------------
+k_sweep:
+  enabled: false
+  k_values: [4, 6, 8, 10, 12, 15]
+  
+# -----------------------------------------------------------------------------
+# Smoke Test Configuration
+# -----------------------------------------------------------------------------
+smoke_test:
+  enabled: false
+  max_samples: 10
+  validate_pycache: true
+  expected_outputs:
+    - "candidates.jsonl"
+    - "summary.json"
