@@ -1,0 +1,53 @@
+{
+  "run_id": "trackB_videomae_pretrain_20251203_215556",
+  "track": "trackB",
+  "stage": "videomae_pretrain",
+  "timestamp": "2025-12-03T21:55:56.461091",
+  "git": {
+    "commit": null,
+    "branch": null,
+    "dirty": null,
+    "remote": null,
+    "note": "git info skipped in Colab"
+  },
+  "system": {
+    "python_version": "3.12.12",
+    "platform": "Linux-6.6.105+-x86_64-with-glibc2.35",
+    "hostname": "colab-vm",
+    "cwd": "/content/drive/MyDrive/Ego4d-LiteSTA/local_extraction",
+    "is_colab": true,
+    "torch_version": "2.9.0+cu126",
+    "cuda_available": true,
+    "cuda_version": "12.6",
+    "gpu_name": "NVIDIA A100-SXM4-40GB",
+    "gpu_count": 1,
+    "gpu_memory_gb": 42.47
+  },
+  "config": {
+    "num_frames": 4,
+    "img_size": 224,
+    "mask_ratio": 0.75,
+    "epochs": 1,
+    "batch_size": 8,
+    "learning_rate": 0.00015,
+    "warmup_epochs": 1,
+    "save_freq": 10,
+    "clips_root": "/content/drive/MyDrive/ego4d_data/clip540s",
+    "output_dir": "/content/drive/MyDrive/Ego4d-LiteSTA/local_extraction/runs_colab/VideoMAE"
+  },
+  "config_overrides": {},
+  "cli_args": [
+    "-f",
+    "/root/.local/share/jupyter/runtime/kernel-a5c8e0f7-4d60-471f-9b70-00d7daca07c8.json"
+  ],
+  "start_time": "2025-12-03T21:55:56.462025",
+  "end_time": null,
+  "duration_seconds": null,
+  "metrics": {},
+  "artifacts": [],
+  "outputs": {},
+  "status": "running",
+  "error": null,
+  "warnings": [],
+  "notes": "Notebook run | Colab=True | 2025-12-03T21:55:56.461977"
+}
