@@ -1,42 +1,15 @@
 # === General ===
 __pycache__/
 *.py[cod]
-*.so
-*.o
-*.exe
-*.log
-*.tmp
-
-# === Notebooks and small configs allowed ===
-!*.ipynb
-!*.py
-!requirements.txt
 .ipynb_checkpoints/
+.venv/
 
-# === Large artifacts (datasets, models, archives) ===
-# Ignore large compressed or binary files over ~40MB
-*.zip
-*.tar
-*.tar.gz
-*.tgz
-*.gz
-*.rar
-*.7z
-*.mp4
-*.avi
-*.mov
-*.mkv
-*.mp3
-*.wav
-*.pt
-*.pth
-*.bin
-*.npy
-*.npz
-*.h5
-*.pkl
-*.json
+# === Ignored folders ===
+local_extraction/toolkit_yolo/
+local_extraction/runs/
+local_extraction/v2/
 
-# Keep source and metadata
-!.gitattributes
-!.gitignore
+# === Exceptions: keep hotspot JSON files in v2 ===
+!local_extraction/v2/hotspot_priors_sta_train.json
+!local_extraction/v2/hotspot_priors_train_logodds_min10.json
+!local_extraction/v2/hotspot_priors_train_prob_min5.json
