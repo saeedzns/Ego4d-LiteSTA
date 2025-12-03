@@ -189,8 +189,11 @@ def train_one_epoch(
     model.train()
     
     loss_meter = AverageMeter()
+    epoch_start = time.time()
     
-    pbar = tqdm(dataloader, desc=f"Epoch {epoch+1}/{cfg.epochs}")
+    # Use tqdm with auto for Colab compatibility
+    pbar = tqdm(dataloader, desc=f"Epoch {epoch+1}/{cfg.epochs}", 
+                dynamic_ncols=True, leave=True)
     
     for step, (video, meta) in enumerate(pbar):
         # Move to device
@@ -217,19 +220,29 @@ def train_one_epoch(
         # Update metrics
         loss_meter.update(loss.item(), video.size(0))
         
-        # Update progress bar
+        # Update progress bar with time estimate
+        elapsed = time.time() - epoch_start
+        steps_done = step + 1
+        steps_total = len(dataloader)
+        eta = (elapsed / steps_done) * (steps_total - steps_done) if steps_done > 0 else 0
+        
         pbar.set_postfix({
             'loss': f'{loss_meter.avg:.4f}',
             'lr': f'{optimizer.param_groups[0]["lr"]:.2e}',
+            'eta': f'{eta:.0f}s',
         })
         
         # Demo mode: early exit
         if cfg.demo and step >= cfg.demo_steps:
             break
     
+    epoch_time = time.time() - epoch_start
+    print(f"  → Epoch {epoch+1} completed in {epoch_time:.1f}s | Avg Loss: {loss_meter.avg:.4f}")
+    
     return {
         'loss': loss_meter.avg,
         'lr': optimizer.param_groups[0]['lr'],
+        'epoch_time': epoch_time,
     }
 
 
@@ -434,7 +447,11 @@ def train(cfg: PretrainConfig) -> float:
     
     # Training loop
     print(f"\nStarting training for {cfg.epochs} epochs...")
+    print(f"  Batches per epoch: {len(dataloader)}")
+    print(f"  Total samples: {len(dataset)}")
+    print("-" * 60)
     training_log = []
+    training_start = time.time()
     
     try:
         for epoch in range(start_epoch, cfg.epochs):
@@ -451,12 +468,22 @@ def train(cfg: PretrainConfig) -> float:
             # Save checkpoint
             if (epoch + 1) % cfg.save_freq == 0 or is_best or epoch == cfg.epochs - 1:
                 save_checkpoint(model, optimizer, scheduler, epoch, cfg, metrics, is_best)
+                print(f"  💾 Checkpoint saved (best={is_best})")
             
             # Log
             metrics['epoch'] = epoch + 1
             training_log.append(metrics)
             
-            print(f"Epoch {epoch+1}/{cfg.epochs} | Loss: {metrics['loss']:.4f} | LR: {metrics['lr']:.2e}")
+            # Calculate time estimates
+            elapsed = time.time() - training_start
+            epochs_done = epoch - start_epoch + 1
+            avg_epoch_time = elapsed / epochs_done
+            epochs_remaining = cfg.epochs - epoch - 1
+            eta_total = avg_epoch_time * epochs_remaining
+            
+            print(f"Epoch {epoch+1}/{cfg.epochs} | Loss: {metrics['loss']:.4f} | LR: {metrics['lr']:.2e} | "
+                  f"Elapsed: {elapsed/60:.1f}min | ETA: {eta_total/60:.1f}min")
+            print("-" * 60)
             
             # Resample dataset between epochs (different windows)
             dataset.resample()
