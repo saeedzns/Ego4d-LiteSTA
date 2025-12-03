@@ -8,6 +8,11 @@ __pycache__/
 local_extraction/toolkit_yolo/
 local_extraction/runs/
 local_extraction/v2/
+epic-kitchens-download-scripts/
+epic_data/
+
+# === Ignored files ===
+
 
 # === Exceptions: keep hotspot JSON files in v2 ===
 !local_extraction/v2/hotspot_priors_sta_train.json

@@ -95,6 +95,10 @@ class PretrainConfig:
     pin_memory: bool = True
     samples_per_uid: int = 4
     
+    # Data paths (set these for Colab!)
+    frames_root: Optional[str] = None    # Path to extracted frames
+    clips_root: Optional[str] = None     # Path to video clips (alternative)
+    
     # Augmentation
     use_augmentation: bool = True
     random_flip: bool = True
@@ -119,6 +123,10 @@ class PretrainConfig:
         if self.device == "auto":
             self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.output_dir = Path(self.output_dir)
+        if self.frames_root is not None:
+            self.frames_root = Path(self.frames_root)
+        if self.clips_root is not None:
+            self.clips_root = Path(self.clips_root)
 
 
 # =============================================================================
@@ -300,8 +308,21 @@ def load_checkpoint(
 # Main Training Function
 # =============================================================================
 
-def train(cfg: PretrainConfig):
-    """Main training function."""
+def pretrain_videomae(cfg: PretrainConfig) -> float:
+    """
+    Public API for VideoMAE pretraining.
+    
+    Args:
+        cfg: PretrainConfig with training parameters
+        
+    Returns:
+        Final training loss
+    """
+    return train(cfg)
+
+
+def train(cfg: PretrainConfig) -> float:
+    """Main training function. Returns final loss."""
     print("=" * 60)
     print("VideoMAE Pretraining")
     print("=" * 60)
@@ -317,9 +338,11 @@ def train(cfg: PretrainConfig):
         logger.log_config(asdict(cfg))
         logger.log_start()
     
-    # Get data paths
-    frames_root = None
-    if HAS_CORE and get_paths is not None:
+    # Get data paths - prefer explicit config, then get_paths(), then default
+    frames_root = cfg.frames_root
+    clips_root = cfg.clips_root
+    
+    if frames_root is None and HAS_CORE and get_paths is not None:
         try:
             paths = get_paths()
             frames_root = paths.frames_root
@@ -330,6 +353,8 @@ def train(cfg: PretrainConfig):
         frames_root = Path("local_extraction/v2/extracted_frames")
     
     print(f"Frames root: {frames_root}")
+    if clips_root:
+        print(f"Clips root: {clips_root}")
     print(f"Device: {cfg.device}")
     print(f"Demo mode: {cfg.demo}")
     
@@ -342,6 +367,7 @@ def train(cfg: PretrainConfig):
         random_flip=cfg.random_flip,
         color_jitter=cfg.color_jitter,
         frames_root=frames_root,
+        clips_root=clips_root,
         samples_per_uid=cfg.samples_per_uid,
     )
     
@@ -465,6 +491,10 @@ def train(cfg: PretrainConfig):
             ])
             logger.log_end(success=True)
             logger.save()
+        
+        # Return final loss
+        final_loss = training_log[-1]['loss'] if training_log else best_loss
+        return final_loss
         
     except Exception as e:
         if logger:

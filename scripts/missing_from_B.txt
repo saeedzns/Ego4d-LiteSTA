@@ -1,0 +1,5 @@
+# Files in A but missing from B
+# A: H:\My Drive\ego4d_data\v2\clips_540\clips
+# B: I:\My Drive\ego4d_data\clip540s
+
+desktop.ini

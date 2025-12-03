@@ -6,8 +6,8 @@ Consumes STA v2 train clips (egocentric video) for self-supervised VideoMAE pret
 Each sample is a T-frame window (e.g., 16 or 32 frames) from an egocentric clip.
 
 Data sources (in priority order):
-1. Extracted frames: local_extraction/v2/extracted_frames/<uid>/<frame:07d>.jpg
-2. Raw clips: H:\\My Drive\\ego4d_data\\v2\\clips_540\\clips (optional, ~95GB)
+1. Raw clips (.mp4): clips_root/<uid>.mp4 (preferred for Colab)
+2. Extracted frames: frames_root/<uid>/<frame:07d>.jpg
 
 This is SELF-SUPERVISED: no labels needed, only raw frames.
 """
@@ -25,6 +25,13 @@ import torch
 from torch.utils.data import Dataset
 import torchvision.transforms as T
 from PIL import Image
+
+# Try to import video reading library
+try:
+    import cv2
+    HAS_CV2 = True
+except ImportError:
+    HAS_CV2 = False
 
 # Add parent paths for imports
 _THIS_DIR = Path(__file__).resolve().parent
@@ -146,10 +153,15 @@ class VideoMAEPretrainDataset(Dataset):
         return T.Compose(transforms)
     
     def _collect_samples(self) -> List[Dict[str, Any]]:
-        """Collect all samples (T-frame windows) from available clips."""
+        """Collect all samples (T-frame windows) from available clips or videos."""
         samples = []
         
-        # Get frames root
+        # Check clips_root first (video files)
+        clips_root = self.cfg.clips_root
+        if clips_root is not None and clips_root.exists():
+            return self._collect_samples_from_clips(clips_root)
+        
+        # Fall back to frames_root (extracted frames)
         frames_root = self.cfg.frames_root
         if frames_root is None and get_paths is not None:
             try:
@@ -158,9 +170,77 @@ class VideoMAEPretrainDataset(Dataset):
             except Exception:
                 pass
         
-        if frames_root is None or not frames_root.exists():
-            print(f"[VideoMAE Dataset] Warning: frames_root not found: {frames_root}")
+        if frames_root is not None and frames_root.exists():
+            return self._collect_samples_from_frames(frames_root)
+        
+        print(f"[VideoMAE Dataset] Warning: No data source found!")
+        print(f"  clips_root: {clips_root}")
+        print(f"  frames_root: {frames_root}")
+        return samples
+    
+    def _collect_samples_from_clips(self, clips_root: Path) -> List[Dict[str, Any]]:
+        """Collect samples from video clip files (.mp4)."""
+        samples = []
+        
+        if not HAS_CV2:
+            print("[VideoMAE Dataset] ERROR: cv2 not available for video reading!")
+            print("  Install with: pip install opencv-python")
             return samples
+        
+        # Find all video files
+        video_files = sorted([
+            f for f in clips_root.iterdir()
+            if f.is_file() and f.suffix.lower() in ('.mp4', '.avi', '.mov', '.mkv')
+        ])
+        
+        print(f"[VideoMAE Dataset] Found {len(video_files)} video files in {clips_root}")
+        
+        for video_path in video_files:
+            uid = video_path.stem  # filename without extension
+            
+            # Get video info
+            try:
+                cap = cv2.VideoCapture(str(video_path))
+                total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                cap.release()
+            except Exception as e:
+                print(f"[VideoMAE Dataset] Warning: Could not read {video_path}: {e}")
+                continue
+            
+            # Skip if not enough frames
+            if total_frames < self.cfg.min_frames_required:
+                continue
+            
+            # Sample multiple windows per video
+            window_length = self.cfg.num_frames * self.cfg.frame_stride
+            num_samples = min(self.cfg.samples_per_uid, total_frames // window_length)
+            
+            for _ in range(max(1, num_samples)):
+                max_start = total_frames - window_length
+                if max_start <= 0:
+                    start_idx = 0
+                else:
+                    start_idx = random.randint(0, max_start)
+                
+                frame_indices = list(range(
+                    start_idx,
+                    start_idx + window_length,
+                    self.cfg.frame_stride
+                ))[:self.cfg.num_frames]
+                
+                samples.append({
+                    'uid': uid,
+                    'video_path': video_path,
+                    'frame_indices': frame_indices,
+                    'source': 'video',
+                })
+        
+        print(f"[VideoMAE Dataset] Created {len(samples)} samples from video clips")
+        return samples
+    
+    def _collect_samples_from_frames(self, frames_root: Path) -> List[Dict[str, Any]]:
+        """Collect samples from extracted frame directories."""
+        samples = []
         
         # Get list of UIDs (from manifest or directory scan)
         uids = self._get_train_uids(frames_root)
@@ -207,6 +287,7 @@ class VideoMAEPretrainDataset(Dataset):
                     'uid_dir': uid_dir,
                     'frame_files': frame_files,
                     'frame_indices': frame_indices,
+                    'source': 'frames',
                 })
         
         return samples
@@ -254,22 +335,11 @@ class VideoMAEPretrainDataset(Dataset):
         """
         sample = self.samples[idx]
         
-        # Load frames
-        frames = []
-        for frame_idx in sample['frame_indices']:
-            frame_path = sample['frame_files'][frame_idx]
-            
-            with Image.open(str(frame_path)) as img:
-                img = img.convert('RGB')
-                
-                # Apply consistent random seed for all frames in same clip
-                # This ensures same spatial transform across temporal dimension
-                if idx == 0:
-                    random.seed(idx)
-                    torch.manual_seed(idx)
-                
-                frame_tensor = self.transform(img)
-                frames.append(frame_tensor)
+        # Load frames based on source type
+        if sample.get('source') == 'video':
+            frames = self._load_frames_from_video(sample, idx)
+        else:
+            frames = self._load_frames_from_dir(sample, idx)
         
         # Stack frames: (T, C, H, W)
         video = torch.stack(frames, dim=0)
@@ -286,6 +356,57 @@ class VideoMAEPretrainDataset(Dataset):
         }
         
         return video, metadata
+    
+    def _load_frames_from_video(self, sample: Dict, idx: int) -> List[torch.Tensor]:
+        """Load frames from a video file using cv2."""
+        frames = []
+        video_path = sample['video_path']
+        
+        cap = cv2.VideoCapture(str(video_path))
+        
+        # Set consistent random seed for spatial transforms
+        random.seed(idx)
+        torch.manual_seed(idx)
+        
+        for frame_idx in sample['frame_indices']:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+            ret, frame = cap.read()
+            
+            if not ret:
+                # If frame read fails, duplicate last frame or use zeros
+                if frames:
+                    frames.append(frames[-1].clone())
+                else:
+                    frames.append(torch.zeros(3, self.cfg.img_size, self.cfg.img_size))
+                continue
+            
+            # Convert BGR to RGB and to PIL
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            img = Image.fromarray(frame_rgb)
+            
+            frame_tensor = self.transform(img)
+            frames.append(frame_tensor)
+        
+        cap.release()
+        return frames
+    
+    def _load_frames_from_dir(self, sample: Dict, idx: int) -> List[torch.Tensor]:
+        """Load frames from extracted frame files."""
+        frames = []
+        
+        # Set consistent random seed for spatial transforms
+        random.seed(idx)
+        torch.manual_seed(idx)
+        
+        for frame_idx in sample['frame_indices']:
+            frame_path = sample['frame_files'][frame_idx]
+            
+            with Image.open(str(frame_path)) as img:
+                img = img.convert('RGB')
+                frame_tensor = self.transform(img)
+                frames.append(frame_tensor)
+        
+        return frames
     
     def resample(self):
         """Re-collect samples with new random windows (call between epochs)."""
