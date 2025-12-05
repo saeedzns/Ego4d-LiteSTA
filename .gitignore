@@ -10,6 +10,13 @@ local_extraction/runs/
 local_extraction/v2/
 epic-kitchens-download-scripts/
 epic_data/
+local_extraction_old
+local_extraction_old.rar
+local_extraction/videomae_local_part/tensors/
+local_extraction/videomae_local_part/tensors_test/
+# === Large binary files ===
+*.pt
+!yolov8s.pt
 
 # === Ignored files ===
 

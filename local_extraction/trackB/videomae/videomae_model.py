@@ -656,6 +656,12 @@ def load_videomae_encoder(
     
     Returns:
         VideoMAEEncoder with loaded weights
+        
+    Supports multiple checkpoint formats:
+    1. Our custom format: {'encoder_state_dict': ...}
+    2. Full model: {'state_dict': ...} with encoder.* prefix
+    3. HuggingFace format: {'model': ...} with videomae.* prefix
+    4. Raw state dict
     """
     ckpt = torch.load(checkpoint_path, map_location=device)
     
@@ -663,18 +669,49 @@ def load_videomae_encoder(
     if cfg is None:
         if 'config' in ckpt:
             cfg_dict = ckpt['config']
-            cfg = VideoMAEConfig(**cfg_dict)
+            # Handle HuggingFace config format
+            if isinstance(cfg_dict, dict) and 'hidden_size' in cfg_dict:
+                # Map HuggingFace keys to our config
+                cfg = VideoMAEConfig(
+                    embed_dim=cfg_dict.get('hidden_size', 768),
+                    depth=cfg_dict.get('num_hidden_layers', 12),
+                    num_heads=cfg_dict.get('num_attention_heads', 12),
+                    patch_size=cfg_dict.get('patch_size', 16),
+                    tubelet_size=cfg_dict.get('tubelet_size', 2),
+                    img_size=cfg_dict.get('image_size', 224),
+                )
+            else:
+                try:
+                    cfg = VideoMAEConfig(**cfg_dict)
+                except TypeError:
+                    cfg = VideoMAEConfig()  # Use defaults
         else:
             cfg = VideoMAEConfig()  # Use defaults
     
     # Create encoder
     encoder = VideoMAEEncoder(cfg)
     
-    # Load weights
+    # Load weights - support multiple formats
     if 'encoder_state_dict' in ckpt:
+        # Our custom encoder-only format
         encoder.load_state_dict(ckpt['encoder_state_dict'])
+    elif 'model' in ckpt:
+        # HuggingFace VideoMAEForPreTraining format
+        # Keys are like: videomae.embeddings.*, videomae.encoder.*
+        state_dict = ckpt['model']
+        encoder_state_dict = {}
+        for k, v in state_dict.items():
+            if k.startswith('videomae.'):
+                # Remove 'videomae.' prefix
+                new_key = k[len('videomae.'):]
+                encoder_state_dict[new_key] = v
+        if encoder_state_dict:
+            encoder.load_state_dict(encoder_state_dict, strict=False)
+            print(f"[VideoMAE] Loaded HuggingFace encoder weights ({len(encoder_state_dict)} keys)")
+        else:
+            print("[VideoMAE] Warning: No encoder weights found in HuggingFace checkpoint")
     elif 'state_dict' in ckpt:
-        # Full model checkpoint, extract encoder weights
+        # Full model checkpoint with encoder.* prefix
         state_dict = {
             k.replace('encoder.', ''): v 
             for k, v in ckpt['state_dict'].items() 

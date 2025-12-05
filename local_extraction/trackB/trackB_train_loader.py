@@ -75,6 +75,10 @@ _cfg = load_config(_config_name)
 # Log which backbone is being used
 _video_backbone = _cfg.get('model.tokenizer.video_backbone', 'resnet18')
 print(f"[TrackB] Video backbone: {_video_backbone}")
+
+# Set the tokenizer config to use the same config (before importing tokenizer)
+import trackB_tokenizer
+trackB_tokenizer.set_tokenizer_config(_cfg)
 # =========================================================
 
 from trackB_dataset import (
@@ -148,6 +152,10 @@ class TrainConfig:
     val_manifest: str | None = _cfg.get('data.val_manifest', None)
     train_manifest: str | None = _cfg.get('data.train_manifest', None)
     stageB_run: str | None = _cfg.get('data.stageB_run', None)
+    
+    # Pre-extracted tokens (for ~120x faster training)
+    # Set to path like "v2/resnet18_tokens" to use pre-extracted ResNet18 tokens
+    tokens_root: str | None = _cfg.get('data.tokens_root', None)
     
     # Multi-task settings
     use_multi_task_labels: bool = _cfg.get('multi_task.enabled', True)
@@ -678,9 +686,16 @@ def main():
     run_logger.log_config(_config_to_dict(cfg))
     run_logger.log_start()
     
-    frames_root = Path("local_extraction") / "v2" / "extracted_frames"
+    # Determine if we're running from local_extraction or repo root
+    _cwd = Path.cwd()
+    if _cwd.name == "local_extraction":
+        _local_extraction = _cwd
+    else:
+        _local_extraction = _cwd / "local_extraction"
+    
+    frames_root = _local_extraction / "v2" / "extracted_frames"
 
-    trackA_runs_root = Path("local_extraction") / "runs" / "Track_A"
+    trackA_runs_root = _local_extraction / "runs" / "Track_A"
     stageB_run = Path(cfg.stageB_run) if cfg.stageB_run else latest_stageB_run(trackA_runs_root)
     stageB_train_manifest = resolve_stageB_manifest(stageB_run, 'head_train')
     stageB_val_manifest = resolve_stageB_manifest(stageB_run, 'head_val')
@@ -692,7 +707,7 @@ def main():
     if cfg.val_manifest is None and stageB_val_manifest is not None:
         cfg.val_manifest = str(stageB_val_manifest)
 
-    manif_root = stageB_run if stageB_run is not None else Path("local_extraction") / "v2" / "manifests"
+    manif_root = stageB_run if stageB_run is not None else _local_extraction / "v2" / "manifests"
 
     if stageB_run is not None:
         print(f"[TrackB] Using TrackA StageB run: {stageB_run}")
@@ -704,8 +719,20 @@ def main():
     train_manifest_path = Path(cfg.train_manifest) if cfg.train_manifest else stageB_train_manifest
 
     tcfg = TokenizerConfig()
+    
+    # Resolve tokens_root for pre-extracted features
+    tokens_root = None
+    if cfg.tokens_root:
+        tokens_root = Path(cfg.tokens_root)
+        if not tokens_root.is_absolute():
+            tokens_root = _local_extraction / cfg.tokens_root
+        if tokens_root.exists():
+            print(f"[TrackB] Using pre-extracted tokens: {tokens_root}")
+        else:
+            print(f"[TrackB] Warning: tokens_root not found, falling back to on-the-fly extraction: {tokens_root}")
+            tokens_root = None
 
-    # Dataset (tokenizes in __getitem__)
+    # Dataset (tokenizes in __getitem__, or loads pre-extracted tokens)
     ds = TrackBDataset(
         frames_root=frames_root,
         manifests_root=manif_root,
@@ -713,6 +740,7 @@ def main():
         tokenizer_cfg=tcfg,
         candidate_limit=cfg.candidate_limit,
         normalize_ttc=cfg.normalize_ttc,
+        tokens_root=tokens_root,
     )
 
     # Models
@@ -806,6 +834,7 @@ def main():
                 candidate_limit=cfg.candidate_limit,
                 normalize_ttc=cfg.normalize_ttc,
                 synthetic_if_empty=True,
+                tokens_root=tokens_root,  # Use same pre-extracted tokens for validation
             )
             val_loader = torch.utils.data.DataLoader(ds_val, batch_size=cfg.batch_size, shuffle=False, num_workers=0, collate_fn=trackB_collate)
         except Exception as e:

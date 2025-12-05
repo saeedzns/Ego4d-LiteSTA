@@ -163,6 +163,12 @@ data:
   # Manifest paths (null = auto-detect)
   train_manifest: null
   val_manifest: null
+  
+  # Pre-extracted ResNet18 tokens for ~120x faster training
+  # Set to "v2/resnet18_tokens" after running:
+  #   python -m trackB.extract_resnet_tokens
+  # Set to null for on-the-fly extraction (slow but no pre-processing needed)
+  tokens_root: null
 
 # -----------------------------------------------------------------------------
 # Smoke Test Configuration

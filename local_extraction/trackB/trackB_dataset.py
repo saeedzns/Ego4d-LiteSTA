@@ -63,6 +63,7 @@ from trackB_tokenizer import (
     sample_window_ending_at,
     image_grid_tokens,
     video_grid_tokens,
+    get_tokens,  # Unified tokenizer that handles both ResNet18 and VideoMAE
 )
 
 @dataclass
@@ -213,6 +214,7 @@ class TrackBDataset(torch.utils.data.Dataset):
         synthetic_if_empty: bool = True,
         cache_dir: Optional[Path] = None,
         seed: int = 0,
+        tokens_root: Optional[Path] = None,  # Path to pre-extracted ResNet18 tokens
     ):
         super().__init__()
         random.seed(seed)
@@ -225,6 +227,12 @@ class TrackBDataset(torch.utils.data.Dataset):
         self.candidate_limit = candidate_limit
         self.normalize_ttc = normalize_ttc
         self.synthetic_if_empty = synthetic_if_empty
+        
+        # Pre-extracted tokens directory (for ~120x faster training)
+        self.tokens_root = tokens_root
+        if self.tokens_root is not None:
+            print(f"[TrackBDataset] Using pre-extracted tokens from: {self.tokens_root}")
+        
         # Default cache directory: local_extraction/runs/Track_B/cache
         if cache_dir is None:
             root_local_extraction = frames_root.parent.parent  # .../local_extraction
@@ -586,10 +594,12 @@ class TrackBDataset(torch.utils.data.Dataset):
             # return empty sample
             return {'uid': uid, 'valid': False}
 
-        # Tokenize
-        img_tokens, hw = image_grid_tokens(frame_path, self.backbone, self.transform, self.tokenizer_cfg)  # (N,512)
-        window = sample_window_ending_at(frame_path, self.frames_root, self.tokenizer_cfg.time_len, self.tokenizer_cfg.time_stride)
-        vid_tokens, _ = video_grid_tokens(window, self.backbone, self.transform, self.tokenizer_cfg)      # (T,N,512)
+        # Tokenize using unified function (handles both ResNet18 and VideoMAE)
+        # Supports pre-extracted tokens for ~120x faster training
+        img_tokens, vid_tokens, hw = get_tokens(
+            frame_path, self.frames_root, self.tokenizer_cfg, self.backbone, self.transform,
+            tokens_root=self.tokens_root
+        )
 
         # Candidate subset
         cands = rec['candidates']

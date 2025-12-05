@@ -17,11 +17,15 @@ model:
     # In-domain egocentric 3D video backbone
     video_backbone: "videomae_ego"
     
+    # VideoMAE requires 16 frames input (matching pretrained model)
+    time_len: 16
+    
     # VideoMAE encoder settings
     videomae:
-      weights_path: "${paths.local_extraction}/runs/VideoMAE/videomae_ego_encoder.pt"
+      weights_path: "${paths.local_extraction}/videomae_local_part/checkpoints_ego_scratch/videomae_ego_scratch_last.pt"
       patch_size: 16
       tubelet_size: 2
+      num_frames: 16  # Must match pretrained model
       embed_dim: 768
       depth: 12
       num_heads: 12
@@ -32,12 +36,50 @@ model:
     in_dim: 768
     out_dim: 256
 
-# Training adjustments for VideoMAE
+# -----------------------------------------------------------------------------
+# Training Configuration (VideoMAE-specific adjustments)
+# -----------------------------------------------------------------------------
 training:
-  # May need slightly different LR for VideoMAE features
-  lr: 5.0e-4
-  # Warm up slightly longer for new backbone
-  warmup_epochs: 2.0
+  # Hyperparameters
+  epochs: 20
+  batch_size: 8
+  lr: 5.0e-4           # Slightly lower LR for pretrained features
+  min_lr: 1.0e-5
+  warmup_epochs: 2.0   # Longer warmup for new backbone
+  
+  # Regularization
+  label_smoothing: 0.05
+  weight_decay: 0.01
+  
+  # Data
+  candidate_limit: 16
+  normalize_ttc: true
+  
+  # Checkpointing
+  save_epoch_checkpoints: true
+  save_best_checkpoint: true
+  
+  # Early stopping
+  early_stopping:
+    enabled: true
+    patience: 5
+    monitor: "mAP"
+    mode: "max"
+  
+  # Evaluation
+  eval_every: 1
+  
+  # Mixed precision (enable for GPU speedup)
+  amp: false
+
+# -----------------------------------------------------------------------------
+# Demo Mode Configuration
+# -----------------------------------------------------------------------------
+demo:
+  enabled: false
+  steps: 10
+  variant: "loader"
+  use_real_labels: true
 
 # Training note
 _note: |
@@ -51,4 +93,4 @@ _note: |
   1. Run VideoMAE pretraining first:
      python -m trackB.videomae.videomae_pretrain --epochs 100
   2. Verify encoder checkpoint exists:
-     runs/VideoMAE/videomae_ego_encoder.pt
+     videomae_local_part/checkpoints_ego_scratch/videomae_ego_scratch_last.pt

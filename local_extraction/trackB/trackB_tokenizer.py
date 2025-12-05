@@ -30,7 +30,10 @@ from tqdm import tqdm
 
 
 # ================== YAML CONFIG LOADING ==================
-def _load_yaml_config():
+# Shared config - can be set by trackB_train_loader.py to use CLI-specified config
+_cfg = None
+
+def _load_yaml_config(config_name: str = 'trackB'):
     """Load YAML config for Track B."""
     _THIS_DIR = Path(__file__).resolve().parent
     _LOCAL_EXTRACTION = _THIS_DIR.parent
@@ -39,11 +42,21 @@ def _load_yaml_config():
             sys.path.insert(0, p)
     try:
         from core import load_config
-        return load_config('trackB')
+        return load_config(config_name)
     except Exception:
         return None
 
-_cfg = _load_yaml_config()
+def set_tokenizer_config(cfg):
+    """Set the shared config from external caller (e.g., trackB_train_loader)."""
+    global _cfg
+    _cfg = cfg
+
+def get_tokenizer_config():
+    """Get the current config, loading default if not set."""
+    global _cfg
+    if _cfg is None:
+        _cfg = _load_yaml_config('trackB')
+    return _cfg
 # =========================================================
 
 
@@ -58,25 +71,25 @@ class TokenizerConfig:
       - "videomae_ego": In-domain egocentric VideoMAE encoder (requires pretrained weights)
     """
     # Video backbone selection
-    video_backbone: str = field(default_factory=lambda: _cfg.get('model.tokenizer.video_backbone', 'resnet18') if _cfg else 'resnet18')
+    video_backbone: str = field(default_factory=lambda: get_tokenizer_config().get('model.tokenizer.video_backbone', 'resnet18') if get_tokenizer_config() else 'resnet18')
     
     # Image settings
-    img_size: int = field(default_factory=lambda: _cfg.get('model.tokenizer.img_size', 224) if _cfg else 224)
+    img_size: int = field(default_factory=lambda: get_tokenizer_config().get('model.tokenizer.img_size', 224) if get_tokenizer_config() else 224)
     mean: Tuple[float, float, float] = (0.485, 0.456, 0.406)
     std: Tuple[float, float, float] = (0.229, 0.224, 0.225)
-    device: str = field(default_factory=lambda: _cfg.get('runtime.device', 'auto') if _cfg else ("cuda" if torch.cuda.is_available() else "cpu"))
-    use_half: bool = field(default_factory=lambda: _cfg.get('runtime.use_half', False) if _cfg else False)
-    time_len: int = field(default_factory=lambda: _cfg.get('model.tokenizer.time_len', 8) if _cfg else 8)
-    time_stride: int = field(default_factory=lambda: _cfg.get('model.tokenizer.time_stride', 2) if _cfg else 2)
+    device: str = field(default_factory=lambda: get_tokenizer_config().get('runtime.device', 'auto') if get_tokenizer_config() else ("cuda" if torch.cuda.is_available() else "cpu"))
+    use_half: bool = field(default_factory=lambda: get_tokenizer_config().get('runtime.use_half', False) if get_tokenizer_config() else False)
+    time_len: int = field(default_factory=lambda: get_tokenizer_config().get('model.tokenizer.time_len', 8) if get_tokenizer_config() else 8)
+    time_stride: int = field(default_factory=lambda: get_tokenizer_config().get('model.tokenizer.time_stride', 2) if get_tokenizer_config() else 2)
     
     # VideoMAE-specific settings
-    videomae_weights_path: Optional[str] = field(default_factory=lambda: _cfg.get('model.tokenizer.videomae.weights_path', None) if _cfg else None)
-    videomae_patch_size: int = field(default_factory=lambda: _cfg.get('model.tokenizer.videomae.patch_size', 16) if _cfg else 16)
-    videomae_tubelet_size: int = field(default_factory=lambda: _cfg.get('model.tokenizer.videomae.tubelet_size', 2) if _cfg else 2)
-    videomae_embed_dim: int = field(default_factory=lambda: _cfg.get('model.tokenizer.videomae.embed_dim', 768) if _cfg else 768)
-    videomae_depth: int = field(default_factory=lambda: _cfg.get('model.tokenizer.videomae.depth', 12) if _cfg else 12)
-    videomae_num_heads: int = field(default_factory=lambda: _cfg.get('model.tokenizer.videomae.num_heads', 12) if _cfg else 12)
-    videomae_freeze_encoder: bool = field(default_factory=lambda: _cfg.get('model.tokenizer.videomae.freeze_encoder', True) if _cfg else True)
+    videomae_weights_path: Optional[str] = field(default_factory=lambda: get_tokenizer_config().get('model.tokenizer.videomae.weights_path', None) if get_tokenizer_config() else None)
+    videomae_patch_size: int = field(default_factory=lambda: get_tokenizer_config().get('model.tokenizer.videomae.patch_size', 16) if get_tokenizer_config() else 16)
+    videomae_tubelet_size: int = field(default_factory=lambda: get_tokenizer_config().get('model.tokenizer.videomae.tubelet_size', 2) if get_tokenizer_config() else 2)
+    videomae_embed_dim: int = field(default_factory=lambda: get_tokenizer_config().get('model.tokenizer.videomae.embed_dim', 768) if get_tokenizer_config() else 768)
+    videomae_depth: int = field(default_factory=lambda: get_tokenizer_config().get('model.tokenizer.videomae.depth', 12) if get_tokenizer_config() else 12)
+    videomae_num_heads: int = field(default_factory=lambda: get_tokenizer_config().get('model.tokenizer.videomae.num_heads', 12) if get_tokenizer_config() else 12)
+    videomae_freeze_encoder: bool = field(default_factory=lambda: get_tokenizer_config().get('model.tokenizer.videomae.freeze_encoder', True) if get_tokenizer_config() else True)
     
     def __post_init__(self):
         # Handle 'auto' device
@@ -185,7 +198,7 @@ def video_grid_tokens(window_paths: List[Path], backbone: nn.Module, tfm: T.Comp
     """Return (vid_tokens, (Hf,Wf)) with shape (T, N, C)."""
     toks: List[torch.Tensor] = []
     Hf = Wf = None
-    for p in tqdm(window_paths, desc="[trackB.tokenizer] frames", leave=False):
+    for p in window_paths:  # Removed tqdm - causes overhead and noisy output
         t, (hf, wf) = image_grid_tokens(p, backbone, tfm, cfg)
         if Hf is None:
             Hf, Wf = hf, wf
@@ -237,6 +250,8 @@ _videomae_encoder_cache: Optional[nn.Module] = None
 def load_videomae_encoder(cfg: TokenizerConfig) -> nn.Module:
     """Load pretrained VideoMAE encoder from checkpoint.
     
+    Supports both our custom format and HuggingFace format checkpoints.
+    
     Returns:
         VideoMAE encoder module (frozen if specified in config)
     """
@@ -244,22 +259,6 @@ def load_videomae_encoder(cfg: TokenizerConfig) -> nn.Module:
     
     if _videomae_encoder_cache is not None:
         return _videomae_encoder_cache
-    
-    # Import VideoMAE module
-    try:
-        from .videomae import load_videomae_encoder as _load_encoder, VideoMAEConfig
-    except ImportError:
-        from trackB.videomae import load_videomae_encoder as _load_encoder, VideoMAEConfig
-    
-    # Create config
-    vmae_cfg = VideoMAEConfig(
-        img_size=cfg.img_size,
-        patch_size=cfg.videomae_patch_size,
-        tubelet_size=cfg.videomae_tubelet_size,
-        embed_dim=cfg.videomae_embed_dim,
-        depth=cfg.videomae_depth,
-        num_heads=cfg.videomae_num_heads,
-    )
     
     # Load weights
     weights_path = cfg.videomae_weights_path
@@ -269,6 +268,18 @@ def load_videomae_encoder(cfg: TokenizerConfig) -> nn.Module:
     
     weights_path = Path(weights_path)
     
+    # Handle relative paths: resolve from local_extraction directory
+    if not weights_path.is_absolute():
+        local_extraction_dir = Path(__file__).resolve().parent.parent
+        weights_path = local_extraction_dir / weights_path
+        # Remove duplicate 'local_extraction' if path starts with it
+        if str(weights_path).replace("\\", "/").count("local_extraction") > 1:
+            # Path like .../local_extraction/local_extraction/... - fix it
+            parts = weights_path.parts
+            # Find last occurrence of 'local_extraction' and take from there
+            last_idx = len(parts) - 1 - parts[::-1].index("local_extraction")
+            weights_path = Path(*parts[:last_idx]) / Path(*parts[last_idx+1:])
+    
     if not weights_path.exists():
         raise FileNotFoundError(
             f"VideoMAE encoder weights not found at: {weights_path}\n"
@@ -276,7 +287,44 @@ def load_videomae_encoder(cfg: TokenizerConfig) -> nn.Module:
             f"  python -m trackB.videomae.videomae_pretrain --epochs 100"
         )
     
-    encoder = _load_encoder(str(weights_path), cfg=vmae_cfg, device=cfg.device)
+    # Load checkpoint to determine format
+    ckpt = torch.load(str(weights_path), map_location=cfg.device)
+    
+    # Detect HuggingFace format (has 'model' key with 'videomae.*' prefixed weights)
+    is_huggingface = 'model' in ckpt and any(k.startswith('videomae.') for k in ckpt['model'].keys())
+    
+    if is_huggingface:
+        # Use HuggingFace VideoMAEModel
+        from transformers import VideoMAEModel, VideoMAEConfig as HFVideoMAEConfig
+        
+        hf_config = HFVideoMAEConfig(**ckpt['config'])
+        encoder = VideoMAEModel(hf_config)
+        
+        # Load encoder weights
+        encoder_weights = {k[len('videomae.'):]: v for k, v in ckpt['model'].items() if k.startswith('videomae.')}
+        encoder.load_state_dict(encoder_weights, strict=False)
+        
+        print(f"[trackB.tokenizer] Loaded HuggingFace VideoMAE encoder from {weights_path}")
+        print(f"  Hidden size: {hf_config.hidden_size}, Layers: {hf_config.num_hidden_layers}")
+    else:
+        # Use our custom format
+        try:
+            from .videomae import load_videomae_encoder as _load_encoder, VideoMAEConfig
+        except ImportError:
+            from trackB.videomae import load_videomae_encoder as _load_encoder, VideoMAEConfig
+        
+        # Create config
+        vmae_cfg = VideoMAEConfig(
+            img_size=cfg.img_size,
+            patch_size=cfg.videomae_patch_size,
+            tubelet_size=cfg.videomae_tubelet_size,
+            embed_dim=cfg.videomae_embed_dim,
+            depth=cfg.videomae_depth,
+            num_heads=cfg.videomae_num_heads,
+        )
+        
+        encoder = _load_encoder(str(weights_path), cfg=vmae_cfg, device=cfg.device)
+        print(f"[trackB.tokenizer] Loaded custom VideoMAE encoder from {weights_path}")
     
     # Freeze if specified
     if cfg.videomae_freeze_encoder:
@@ -287,8 +335,6 @@ def load_videomae_encoder(cfg: TokenizerConfig) -> nn.Module:
     encoder = encoder.to(cfg.device)
     _videomae_encoder_cache = encoder
     
-    print(f"[trackB.tokenizer] Loaded VideoMAE encoder from {weights_path}")
-    
     return encoder
 
 
@@ -297,6 +343,8 @@ def video_grid_tokens_videomae(
     cfg: TokenizerConfig,
 ) -> Tuple[torch.Tensor, Tuple[int, int, int]]:
     """Extract video tokens using VideoMAE encoder.
+    
+    Supports both our custom encoder and HuggingFace VideoMAEModel.
     
     Args:
         window_paths: List of frame paths (T frames)
@@ -313,6 +361,9 @@ def video_grid_tokens_videomae(
     
     # Load encoder
     encoder = load_videomae_encoder(cfg)
+    
+    # Check if it's HuggingFace model
+    is_huggingface = hasattr(encoder, 'config') and hasattr(encoder.config, 'hidden_size')
     
     # Build transform
     tfm = build_transform(cfg)
@@ -339,7 +390,7 @@ def video_grid_tokens_videomae(
     # Stack: (T, C, H, W)
     video = torch.stack(frames, dim=0)
     
-    # Convert to (C, T, H, W) for VideoMAE
+    # Convert to (C, T, H, W) for VideoMAE -> then (B, C, T, H, W)
     video = video.permute(1, 0, 2, 3).unsqueeze(0)  # (1, C, T, H, W)
     video = video.to(cfg.device)
     
@@ -348,10 +399,38 @@ def video_grid_tokens_videomae(
     
     # Encode
     with torch.no_grad():
-        encoded, grid_size = encoder(video)  # (1, N+1, D), (T', H', W')
+        if is_huggingface:
+            # HuggingFace VideoMAEModel expects (B, T, C, H, W) or (B, C, T, H, W)
+            # Actually it expects (B, num_frames, num_channels, height, width)
+            video_hf = video.permute(0, 2, 1, 3, 4)  # (1, T, C, H, W)
+            outputs = encoder(pixel_values=video_hf, return_dict=True)
+            encoded = outputs.last_hidden_state  # (B, N+1, D) or (B, N, D)
+            
+            # Calculate grid size from config
+            patch_size = encoder.config.patch_size
+            tubelet_size = encoder.config.tubelet_size
+            num_frames = encoder.config.num_frames
+            image_size = encoder.config.image_size
+            
+            T_out = num_frames // tubelet_size
+            H_out = image_size // patch_size
+            W_out = image_size // patch_size
+            grid_size = (T_out, H_out, W_out)
+        else:
+            # Our custom encoder
+            encoded, grid_size = encoder(video)  # (1, N+1, D), (T', H', W')
     
-    # Remove CLS token
-    tokens = encoded[:, 1:, :]  # (1, N, D)
+    # Remove CLS token if present (HuggingFace has CLS at position 0)
+    if is_huggingface:
+        # HuggingFace: first token is CLS (if use_mean_pooling=False)
+        # Check shape to determine
+        expected_patches = grid_size[0] * grid_size[1] * grid_size[2]
+        if encoded.shape[1] == expected_patches + 1:
+            tokens = encoded[:, 1:, :]  # Remove CLS
+        else:
+            tokens = encoded
+    else:
+        tokens = encoded[:, 1:, :]  # (1, N, D)
     
     # Reshape to (T', H'*W', D) format compatible with fusion
     T_out, H_out, W_out = grid_size
@@ -370,6 +449,8 @@ def image_grid_tokens_videomae(
 ) -> Tuple[torch.Tensor, Tuple[int, int]]:
     """Extract image tokens using VideoMAE encoder (single frame, replicated).
     
+    Supports both our custom encoder and HuggingFace VideoMAEModel.
+    
     For VideoMAE, we need T frames. We replicate the single image to match.
     This is useful for the last-frame encoding in Track B.
     
@@ -385,6 +466,9 @@ def image_grid_tokens_videomae(
     
     # Load encoder
     encoder = load_videomae_encoder(cfg)
+    
+    # Check if it's HuggingFace model
+    is_huggingface = hasattr(encoder, 'config') and hasattr(encoder.config, 'hidden_size')
     
     # Build transform
     tfm = build_transform(cfg)
@@ -407,10 +491,34 @@ def image_grid_tokens_videomae(
     
     # Encode
     with torch.no_grad():
-        encoded, grid_size = encoder(video)  # (1, N+1, D), (T', H', W')
+        if is_huggingface:
+            # HuggingFace expects (B, T, C, H, W)
+            video_hf = video.permute(0, 2, 1, 3, 4)  # (1, T, C, H, W)
+            outputs = encoder(pixel_values=video_hf, return_dict=True)
+            encoded = outputs.last_hidden_state
+            
+            # Calculate grid size from config
+            patch_size = encoder.config.patch_size
+            tubelet_size = encoder.config.tubelet_size
+            num_frames = encoder.config.num_frames
+            image_size = encoder.config.image_size
+            
+            T_out = num_frames // tubelet_size
+            H_out = image_size // patch_size
+            W_out = image_size // patch_size
+            grid_size = (T_out, H_out, W_out)
+        else:
+            encoded, grid_size = encoder(video)  # (1, N+1, D), (T', H', W')
     
-    # Remove CLS token
-    tokens = encoded[:, 1:, :]  # (1, N, D)
+    # Remove CLS token if present
+    if is_huggingface:
+        expected_patches = grid_size[0] * grid_size[1] * grid_size[2]
+        if encoded.shape[1] == expected_patches + 1:
+            tokens = encoded[:, 1:, :]
+        else:
+            tokens = encoded
+    else:
+        tokens = encoded[:, 1:, :]  # (1, N, D)
     
     # For single image, take tokens from the last temporal position
     T_out, H_out, W_out = grid_size
@@ -427,26 +535,123 @@ def image_grid_tokens_videomae(
 
 # ========================= Unified Token Extraction =========================
 
+# Cache transform to avoid recreating on every call
+_transform_cache: Optional[T.Compose] = None
+_transform_cache_key: Optional[Tuple[int, Tuple, Tuple]] = None
+
+def _get_cached_transform(cfg: TokenizerConfig) -> T.Compose:
+    """Get or create cached transform."""
+    global _transform_cache, _transform_cache_key
+    key = (cfg.img_size, cfg.mean, cfg.std)
+    if _transform_cache is None or _transform_cache_key != key:
+        _transform_cache = build_transform(cfg)
+        _transform_cache_key = key
+    return _transform_cache
+
+
+# ========================= Pre-extracted Token Loading =========================
+
+def load_preextracted_tokens(
+    frame_path: Path,
+    frames_root: Path,
+    tokens_root: Path,
+    time_len: int,
+    time_stride: int,
+) -> Optional[Tuple[torch.Tensor, torch.Tensor, Tuple[int, int]]]:
+    """
+    Load pre-extracted ResNet18 tokens from .pt files.
+    
+    Args:
+        frame_path: Path to the last frame (used to find corresponding .pt file)
+        frames_root: Root directory for frames (to determine UID)
+        tokens_root: Root directory for pre-extracted tokens (e.g., v2/resnet18_tokens)
+        time_len: Number of frames in temporal window
+        time_stride: Stride between frames
+    
+    Returns:
+        (img_tokens, vid_tokens, grid_hw) or None if tokens not found
+    """
+    # Determine UID from frame path
+    uid = frame_path.parent.name
+    tokens_uid_dir = tokens_root / uid
+    
+    if not tokens_uid_dir.exists():
+        return None
+    
+    # Load image tokens for the last frame
+    img_pt_path = tokens_uid_dir / f"{frame_path.stem}.pt"
+    if not img_pt_path.exists():
+        return None
+    
+    try:
+        img_data = torch.load(img_pt_path, map_location='cpu')
+        img_tokens = img_data['tokens']  # (N, 512)
+        grid_hw = img_data['hw']  # (Hf, Wf)
+    except Exception:
+        return None
+    
+    # Get window frames for video tokens
+    window = sample_window_ending_at(frame_path, frames_root, time_len, time_stride)
+    
+    if not window:
+        # Fallback: replicate image tokens
+        vid_tokens = img_tokens.unsqueeze(0).repeat(time_len, 1, 1)
+        return img_tokens, vid_tokens, grid_hw
+    
+    # Load tokens for each frame in window
+    vid_tokens_list = []
+    for wf in window:
+        wf_pt_path = tokens_uid_dir / f"{wf.stem}.pt"
+        if wf_pt_path.exists():
+            try:
+                wf_data = torch.load(wf_pt_path, map_location='cpu')
+                vid_tokens_list.append(wf_data['tokens'])
+            except Exception:
+                # Fallback to image tokens if loading fails
+                vid_tokens_list.append(img_tokens)
+        else:
+            # Missing frame token - use image tokens as fallback
+            vid_tokens_list.append(img_tokens)
+    
+    vid_tokens = torch.stack(vid_tokens_list, dim=0)  # (T, N, 512)
+    
+    return img_tokens, vid_tokens, grid_hw
+
+
 def get_tokens(
     frame_path: Path,
     frames_root: Path,
     cfg: TokenizerConfig,
     backbone: Optional[nn.Module] = None,
+    transform: Optional[T.Compose] = None,
+    tokens_root: Optional[Path] = None,
 ) -> Tuple[torch.Tensor, torch.Tensor, Tuple[int, int]]:
     """
     Unified token extraction based on video_backbone config.
+    
+    Supports loading pre-extracted tokens from .pt files for faster training.
     
     Args:
         frame_path: Path to the last frame
         frames_root: Root directory for frames
         cfg: Tokenizer configuration
         backbone: Optional pre-built ResNet backbone (for resnet18 mode)
+        transform: Optional pre-built transform (for resnet18 mode, avoids recreation)
+        tokens_root: Optional path to pre-extracted tokens directory (e.g., v2/resnet18_tokens)
     
     Returns:
         img_tokens: (N, C) last-frame tokens
         vid_tokens: (T, N, C) video tokens
         grid_hw: (H', W') spatial grid dimensions
     """
+    # Try loading pre-extracted tokens first (ResNet18 only for now)
+    if tokens_root is not None and cfg.video_backbone == "resnet18":
+        preextracted = load_preextracted_tokens(
+            frame_path, frames_root, tokens_root, cfg.time_len, cfg.time_stride
+        )
+        if preextracted is not None:
+            return preextracted
+    
     if cfg.video_backbone == "videomae_ego":
         # Use VideoMAE encoder
         window = sample_window_ending_at(frame_path, frames_root, cfg.time_len, cfg.time_stride)
@@ -465,7 +670,8 @@ def get_tokens(
         if backbone is None:
             backbone = build_backbone(cfg.device)
         
-        tfm = build_transform(cfg)
+        # Use provided transform, or get from cache
+        tfm = transform if transform is not None else _get_cached_transform(cfg)
         
         img_tokens, grid_hw = image_grid_tokens(frame_path, backbone, tfm, cfg)
         
