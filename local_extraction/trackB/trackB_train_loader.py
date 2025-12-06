@@ -402,7 +402,7 @@ def _run_demo(
             else:
                 print('[trackB.demo] demo_use_real_labels disabled; using synthetic samples.')
 
-        backbone_demo = build_backbone(device)
+        backbone_demo = build_backbone(tcfg)
         transform_demo = build_transform(tcfg)
 
         def _pick_sample(fr_root: Path) -> Tuple[Optional[Path], Optional[Path]]:

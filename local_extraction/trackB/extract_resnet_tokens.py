@@ -167,7 +167,7 @@ def main():
     print("\n[1/3] Loading ResNet18 backbone...")
     cfg = TokenizerConfig()
     cfg.device = device
-    backbone = build_backbone(device)
+    backbone = build_backbone(cfg)
     transform = build_transform(cfg)
     print(f"      Backbone loaded on {device}")
     

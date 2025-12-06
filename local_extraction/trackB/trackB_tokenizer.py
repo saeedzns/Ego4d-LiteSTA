@@ -132,8 +132,125 @@ class ResNet18Backbone(nn.Module):
         return x  # (B,C,Hf,Wf)
 
 
-def build_backbone(device: str) -> nn.Module:
-    model = ResNet18Backbone(pretrained=True).to(device).eval()
+class VideoMAEBackboneWrapper(nn.Module):
+    """Wrapper for VideoMAE encoder to match ResNet interface.
+    
+    VideoMAE outputs (B, N+1, D) where N = T'*H'*W' patches + 1 CLS token.
+    For compatibility with existing code, we reshape to (B, C, Hf, Wf) format
+    by taking only spatial tokens from the last temporal slice.
+    """
+    def __init__(self, cfg: TokenizerConfig):
+        super().__init__()
+        # Import with fallback for notebook vs module execution
+        try:
+            from .videomae.videomae_model import VideoMAEEncoder, VideoMAEConfig
+        except ImportError:
+            from trackB.videomae.videomae_model import VideoMAEEncoder, VideoMAEConfig
+        
+        # Build VideoMAE config from TokenizerConfig
+        vmae_cfg = VideoMAEConfig(
+            img_size=cfg.img_size,
+            patch_size=cfg.videomae_patch_size,
+            tubelet_size=cfg.videomae_tubelet_size,
+            embed_dim=cfg.videomae_embed_dim,
+            depth=cfg.videomae_depth,
+            num_heads=cfg.videomae_num_heads,
+        )
+        self.encoder = VideoMAEEncoder(vmae_cfg)
+        self.cfg = cfg
+        self.vmae_cfg = vmae_cfg
+        
+        # Load pretrained weights if available
+        if cfg.videomae_weights_path:
+            self._load_weights(cfg.videomae_weights_path)
+        
+        # Optionally freeze encoder
+        if cfg.videomae_freeze_encoder:
+            for p in self.encoder.parameters():
+                p.requires_grad_(False)
+    
+    def _load_weights(self, weights_path: str):
+        """Load pretrained VideoMAE encoder weights."""
+        import os
+        if os.path.exists(weights_path):
+            state = torch.load(weights_path, map_location='cpu')
+            # Handle different checkpoint formats
+            if 'encoder' in state:
+                self.encoder.load_state_dict(state['encoder'], strict=False)
+            elif 'model' in state:
+                # Filter encoder keys
+                encoder_state = {k.replace('encoder.', ''): v 
+                                for k, v in state['model'].items() 
+                                if k.startswith('encoder.')}
+                self.encoder.load_state_dict(encoder_state, strict=False)
+            else:
+                self.encoder.load_state_dict(state, strict=False)
+            print(f"[VideoMAE] Loaded weights from {weights_path}")
+        else:
+            print(f"[VideoMAE] Warning: weights not found at {weights_path}, using random init")
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x: (B, C, H, W) single frame OR (B, C, T, H, W) video
+        
+        Returns:
+            features: (B, C, Hf, Wf) feature map compatible with ResNet interface
+        """
+        # Handle single frame input by adding temporal dimension
+        if x.dim() == 4:
+            # (B, C, H, W) -> (B, C, T, H, W) with T frames by repeating
+            x = x.unsqueeze(2).repeat(1, 1, self.vmae_cfg.tubelet_size, 1, 1)
+        
+        # Forward through encoder (no masking for feature extraction)
+        encoded, grid_size = self.encoder(x, mask=None)  # (B, N+1, D)
+        
+        T_patches, H_patches, W_patches = grid_size
+        
+        # Remove CLS token
+        tokens = encoded[:, 1:, :]  # (B, T'*H'*W', D)
+        
+        # Reshape to (B, T', H', W', D)
+        B, _, D = tokens.shape
+        tokens = tokens.view(B, T_patches, H_patches, W_patches, D)
+        
+        # Take last temporal slice to get spatial feature map (like ResNet)
+        spatial = tokens[:, -1, :, :, :]  # (B, H', W', D)
+        
+        # Permute to (B, D, H', W') to match ResNet output format
+        features = spatial.permute(0, 3, 1, 2).contiguous()  # (B, D, Hf, Wf)
+        
+        return features
+
+
+def build_backbone(cfg: TokenizerConfig) -> nn.Module:
+    """Build video backbone based on config.
+    
+    Args:
+        cfg: TokenizerConfig with video_backbone set to:
+            - "resnet18": ImageNet-pretrained ResNet18 (512-dim, 7x7 grid)
+            - "videomae_ego": Egocentric VideoMAE encoder (768-dim, 14x14 grid)
+    
+    Returns:
+        Backbone module that outputs (B, C, Hf, Wf) feature maps
+    """
+    device = cfg.device
+    
+    if cfg.video_backbone == "videomae_ego":
+        print(f"[Tokenizer] Building VideoMAE backbone (embed_dim={cfg.videomae_embed_dim})")
+        try:
+            model = VideoMAEBackboneWrapper(cfg)
+            model = model.to(device)
+            model = model.eval()
+        except Exception as e:
+            print(f"[Tokenizer] ⚠️ VideoMAE build failed: {e}")
+            print(f"[Tokenizer] Falling back to ResNet18...")
+            model = ResNet18Backbone(pretrained=True).to(device).eval()
+    else:
+        # Default: ResNet18
+        print(f"[Tokenizer] Building ResNet18 backbone")
+        model = ResNet18Backbone(pretrained=True).to(device).eval()
+    
     return model
 
 
@@ -247,8 +364,8 @@ def roi_pool_tokens_mean(tokens_hw: Tuple[int, int], tokens: torch.Tensor, box_x
 _videomae_encoder_cache: Optional[nn.Module] = None
 
 
-def load_videomae_encoder(cfg: TokenizerConfig) -> nn.Module:
-    """Load pretrained VideoMAE encoder from checkpoint.
+def _load_videomae_encoder_cached(cfg: TokenizerConfig) -> nn.Module:
+    """Load pretrained VideoMAE encoder from checkpoint (with caching).
     
     Supports both our custom format and HuggingFace format checkpoints.
     
@@ -290,23 +407,35 @@ def load_videomae_encoder(cfg: TokenizerConfig) -> nn.Module:
     # Load checkpoint to determine format
     ckpt = torch.load(str(weights_path), map_location=cfg.device)
     
-    # Detect HuggingFace format (has 'model' key with 'videomae.*' prefixed weights)
-    is_huggingface = 'model' in ckpt and any(k.startswith('videomae.') for k in ckpt['model'].keys())
+    # Detect HuggingFace format: must have 'model' with 'videomae.*' keys AND 'config' with 'hidden_size'
+    # This distinguishes from our custom format which may also have 'model' key
+    is_huggingface = (
+        'model' in ckpt 
+        and 'config' in ckpt 
+        and isinstance(ckpt.get('config'), dict)
+        and 'hidden_size' in ckpt.get('config', {})
+        and any(k.startswith('videomae.') for k in ckpt.get('model', {}).keys())
+    )
     
     if is_huggingface:
-        # Use HuggingFace VideoMAEModel
-        from transformers import VideoMAEModel, VideoMAEConfig as HFVideoMAEConfig
-        
-        hf_config = HFVideoMAEConfig(**ckpt['config'])
-        encoder = VideoMAEModel(hf_config)
-        
-        # Load encoder weights
-        encoder_weights = {k[len('videomae.'):]: v for k, v in ckpt['model'].items() if k.startswith('videomae.')}
-        encoder.load_state_dict(encoder_weights, strict=False)
-        
-        print(f"[trackB.tokenizer] Loaded HuggingFace VideoMAE encoder from {weights_path}")
-        print(f"  Hidden size: {hf_config.hidden_size}, Layers: {hf_config.num_hidden_layers}")
-    else:
+        # Use HuggingFace VideoMAEModel - only if transformers is available
+        try:
+            from transformers import VideoMAEModel, VideoMAEConfig as HFVideoMAEConfig
+            
+            hf_config = HFVideoMAEConfig(**ckpt['config'])
+            encoder = VideoMAEModel(hf_config)
+            
+            # Load encoder weights
+            encoder_weights = {k[len('videomae.'):]: v for k, v in ckpt['model'].items() if k.startswith('videomae.')}
+            encoder.load_state_dict(encoder_weights, strict=False)
+            
+            print(f"[trackB.tokenizer] Loaded HuggingFace VideoMAE encoder from {weights_path}")
+            print(f"  Hidden size: {hf_config.hidden_size}, Layers: {hf_config.num_hidden_layers}")
+        except ImportError:
+            print("[trackB.tokenizer] HuggingFace transformers not installed, using custom loader...")
+            is_huggingface = False  # Fall through to custom loader
+    
+    if not is_huggingface:
         # Use our custom format
         try:
             from .videomae import load_videomae_encoder as _load_encoder, VideoMAEConfig
@@ -359,8 +488,8 @@ def video_grid_tokens_videomae(
     """
     from PIL import Image
     
-    # Load encoder
-    encoder = load_videomae_encoder(cfg)
+    # Load encoder (cached)
+    encoder = _load_videomae_encoder_cached(cfg)
     
     # Check if it's HuggingFace model
     is_huggingface = hasattr(encoder, 'config') and hasattr(encoder.config, 'hidden_size')
@@ -464,8 +593,8 @@ def image_grid_tokens_videomae(
     """
     from PIL import Image
     
-    # Load encoder
-    encoder = load_videomae_encoder(cfg)
+    # Load encoder (cached)
+    encoder = _load_videomae_encoder_cached(cfg)
     
     # Check if it's HuggingFace model
     is_huggingface = hasattr(encoder, 'config') and hasattr(encoder.config, 'hidden_size')
@@ -668,7 +797,7 @@ def get_tokens(
     else:
         # Use ResNet18 (default baseline)
         if backbone is None:
-            backbone = build_backbone(cfg.device)
+            backbone = build_backbone(cfg)
         
         # Use provided transform, or get from cache
         tfm = transform if transform is not None else _get_cached_transform(cfg)
@@ -714,7 +843,7 @@ def _demo():
     print(f"\n--- Testing with backbone={cfg.video_backbone} ---")
     
     if cfg.video_backbone == "resnet18":
-        backbone = build_backbone(cfg.device)
+        backbone = build_backbone(cfg)
         tfm = build_transform(cfg)
         img_tok, hw = image_grid_tokens(last, backbone, tfm, cfg)
         window = sample_window_ending_at(last, frames_root, cfg.time_len, cfg.time_stride)

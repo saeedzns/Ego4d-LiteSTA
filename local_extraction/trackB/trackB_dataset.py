@@ -242,7 +242,7 @@ class TrackBDataset(torch.utils.data.Dataset):
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
         # Backbone & transform (single instance; DataLoader num_workers should stay 0 unless reworked)
-        self.backbone = build_backbone(self.tokenizer_cfg.device)
+        self.backbone = build_backbone(self.tokenizer_cfg)
         self.transform = build_transform(self.tokenizer_cfg)
 
         # Load manifest
