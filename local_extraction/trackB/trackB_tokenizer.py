@@ -354,7 +354,7 @@ def roi_pool_tokens_mean(tokens_hw: Tuple[int, int], tokens: torch.Tensor, box_x
         base = yy * Wf
         for xx in range(gx1, gx2 + 1):
             idxs.append(base + xx)
-    sel = tokens.index_select(0, torch.tensor(idxs))
+    sel = tokens.index_select(0, torch.tensor(idxs, device=tokens.device))
     return sel.mean(dim=0)
 
 
