@@ -1,0 +1,18 @@
+TrackB Tensor Builder Summary
+============================================================
+Timestamp: 2025-12-06T04:50:26.784331
+Manifest: ..\runs\Track_A\trackA_stageB_20251117_184342\head_val.jsonl
+Output: ..\videomae_trackB_tensors
+
+Configuration:
+  time_len: 16
+  time_stride: 2
+  img_size: 224
+
+Results:
+  Total annotations: 1777
+  Processed: 755
+  Skipped (existing): 1022
+  Failed: 0
+  Missing frames: 0
+  Unique UIDs: 755

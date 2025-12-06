@@ -747,6 +747,146 @@ def load_preextracted_tokens(
     return img_tokens, vid_tokens, grid_hw
 
 
+def load_preextracted_videomae_frames(
+    frame_path: Path,
+    frames_root: Path,
+    tokens_root: Path,
+    cfg: 'TokenizerConfig',
+) -> Optional[Tuple[torch.Tensor, torch.Tensor, Tuple[int, int]]]:
+    """
+    Load pre-extracted VideoMAE frame tensors and encode them.
+    
+    Supports two tensor formats:
+    1. Per-annotation (preferred): <uid>_<frame_idx>.pt - ImageNet-normalized, annotation-aligned
+    2. Per-video (legacy): <uid>.pt - Raw [0,1] values, random window from video
+    
+    Expected tensor format: (C=3, T=16, H=224, W=224), float32
+    
+    Args:
+        frame_path: Path to the annotation frame (used to determine UID and frame index)
+        frames_root: Root directory for frames (to determine UID)
+        tokens_root: Root directory for pre-extracted frame tensors
+        cfg: Tokenizer configuration
+    
+    Returns:
+        (img_tokens, vid_tokens, grid_hw) or None if tensor not found
+    """
+    # Determine UID and frame index from frame path
+    uid = frame_path.parent.name
+    frame_idx = frame_path.stem
+    
+    # Try per-annotation format first (preferred): <uid>_<frame_idx>.pt
+    # These are already ImageNet-normalized and annotation-aligned
+    tensor_path = tokens_root / f"{uid}_{frame_idx}.pt"
+    is_normalized = True
+    
+    if not tensor_path.exists():
+        # Fallback to per-video format: <uid>.pt
+        # These are raw [0,1] values and need normalization
+        tensor_path = tokens_root / f"{uid}.pt"
+        is_normalized = False
+    
+    if not tensor_path.exists():
+        return None
+    
+    try:
+        # Load pre-extracted frame tensor: (C, T, H, W) or (3, 16, 224, 224)
+        frames_tensor = torch.load(tensor_path, map_location='cpu')
+        
+        # Handle dict format (if saved with metadata)
+        if isinstance(frames_tensor, dict):
+            frames_tensor = frames_tensor.get('frames', frames_tensor.get('tensor'))
+        
+        if frames_tensor is None:
+            return None
+            
+        # Validate shape
+        if frames_tensor.dim() != 4:
+            print(f"[VideoMAE] Warning: Unexpected tensor shape {frames_tensor.shape} for {uid}")
+            return None
+        
+        C, T, H, W = frames_tensor.shape
+        
+        # Ensure correct frame count
+        expected_T = cfg.time_len
+        if T != expected_T:
+            # Adjust: repeat last frame or truncate
+            if T < expected_T:
+                # Pad by repeating last frame
+                pad_frames = frames_tensor[:, -1:, :, :].repeat(1, expected_T - T, 1, 1)
+                frames_tensor = torch.cat([frames_tensor, pad_frames], dim=1)
+            else:
+                # Take last expected_T frames
+                frames_tensor = frames_tensor[:, -expected_T:, :, :]
+        
+        # Apply ImageNet normalization if using legacy per-video tensors (raw [0,1] values)
+        if not is_normalized:
+            # ImageNet normalization: (x - mean) / std
+            # frames_tensor is (C, T, H, W), normalize along channel dimension
+            mean = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1, 1)
+            std = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1, 1)
+            frames_tensor = (frames_tensor - mean) / std
+        
+        # Load VideoMAE encoder
+        encoder = _load_videomae_encoder_cached(cfg)
+        is_huggingface = hasattr(encoder, 'config') and hasattr(encoder.config, 'hidden_size')
+        
+        # Prepare input: (1, C, T, H, W)
+        video = frames_tensor.unsqueeze(0).to(cfg.device)
+        
+        if cfg.use_half and cfg.device.startswith("cuda"):
+            video = video.half()
+        
+        # Encode
+        with torch.no_grad():
+            if is_huggingface:
+                # HuggingFace expects (B, T, C, H, W)
+                video_hf = video.permute(0, 2, 1, 3, 4)  # (1, T, C, H, W)
+                outputs = encoder(pixel_values=video_hf, return_dict=True)
+                encoded = outputs.last_hidden_state
+                
+                patch_size = encoder.config.patch_size
+                tubelet_size = encoder.config.tubelet_size
+                num_frames = encoder.config.num_frames
+                image_size = encoder.config.image_size
+                
+                T_out = num_frames // tubelet_size
+                H_out = image_size // patch_size
+                W_out = image_size // patch_size
+                grid_size = (T_out, H_out, W_out)
+            else:
+                # Custom encoder
+                encoded, grid_size = encoder(video)
+        
+        # Remove CLS token if present
+        if is_huggingface:
+            expected_patches = grid_size[0] * grid_size[1] * grid_size[2]
+            if encoded.shape[1] == expected_patches + 1:
+                tokens = encoded[:, 1:, :]
+            else:
+                tokens = encoded
+        else:
+            tokens = encoded[:, 1:, :]
+        
+        # Reshape to (T', H'*W', D)
+        T_out, H_out, W_out = grid_size
+        N_spatial = H_out * W_out
+        
+        vid_tokens = tokens.reshape(1, T_out, N_spatial, -1).squeeze(0)  # (T', N, D)
+        vid_tokens = vid_tokens.float().cpu()
+        
+        # For image tokens, take the middle temporal token and average
+        img_tokens = vid_tokens[T_out // 2]  # (N, D)
+        
+        grid_hw = (H_out, W_out)
+        
+        return img_tokens, vid_tokens, grid_hw
+        
+    except Exception as e:
+        print(f"[VideoMAE] Error loading pre-extracted tensor for {uid}: {e}")
+        return None
+
+
 def get_tokens(
     frame_path: Path,
     frames_root: Path,
@@ -766,20 +906,30 @@ def get_tokens(
         cfg: Tokenizer configuration
         backbone: Optional pre-built ResNet backbone (for resnet18 mode)
         transform: Optional pre-built transform (for resnet18 mode, avoids recreation)
-        tokens_root: Optional path to pre-extracted tokens directory (e.g., v2/resnet18_tokens)
+        tokens_root: Optional path to pre-extracted tokens directory
+            - For resnet18: expects v2/resnet18_tokens/<uid>/<frame>.pt
+            - For videomae_ego: expects videomae/tensors/<uid>.pt (raw frame tensors)
     
     Returns:
         img_tokens: (N, C) last-frame tokens
         vid_tokens: (T, N, C) video tokens
         grid_hw: (H', W') spatial grid dimensions
     """
-    # Try loading pre-extracted tokens first (ResNet18 only for now)
-    if tokens_root is not None and cfg.video_backbone == "resnet18":
-        preextracted = load_preextracted_tokens(
-            frame_path, frames_root, tokens_root, cfg.time_len, cfg.time_stride
-        )
-        if preextracted is not None:
-            return preextracted
+    # Try loading pre-extracted tokens first
+    if tokens_root is not None:
+        if cfg.video_backbone == "resnet18":
+            preextracted = load_preextracted_tokens(
+                frame_path, frames_root, tokens_root, cfg.time_len, cfg.time_stride
+            )
+            if preextracted is not None:
+                return preextracted
+        elif cfg.video_backbone == "videomae_ego":
+            # Load pre-extracted VideoMAE frame tensors (skips video decoding)
+            preextracted = load_preextracted_videomae_frames(
+                frame_path, frames_root, tokens_root, cfg
+            )
+            if preextracted is not None:
+                return preextracted
     
     if cfg.video_backbone == "videomae_ego":
         # Use VideoMAE encoder
