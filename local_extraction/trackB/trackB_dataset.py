@@ -242,7 +242,12 @@ class TrackBDataset(torch.utils.data.Dataset):
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
         # Backbone & transform (single instance; DataLoader num_workers should stay 0 unless reworked)
-        self.backbone = build_backbone(self.tokenizer_cfg)
+        # Skip backbone build if using pre-extracted tokens (saves memory and startup time)
+        if self.tokens_root is not None:
+            self.backbone = None  # Not needed when loading pre-encoded tokens
+            print(f"[TrackBDataset] Skipping backbone build (using pre-extracted tokens)")
+        else:
+            self.backbone = build_backbone(self.tokenizer_cfg)
         self.transform = build_transform(self.tokenizer_cfg)
 
         # Load manifest

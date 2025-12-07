@@ -74,9 +74,9 @@ multi_task:
   
   # Loss weights
   loss_weights:
-    next_active: 1.5
-    noun: 0.25
-    verb: 0.25
+    next_active: 1.0
+    noun: 1.0
+    verb: 1.0
     ttc: 1.0
 
 # -----------------------------------------------------------------------------

@@ -746,7 +746,31 @@ def main():
     # Models
     C = TOKEN_DIM
     # Get projector input dim from config (512 for resnet18, 768 for videomae_ego)
+    # Auto-detect from tokens if using pre-extracted tokens
     projector_in_dim = _cfg.get('model.projector.in_dim', 512)
+    detected_video_backbone = _video_backbone  # default from config
+    
+    if tokens_root is not None:
+        # Try to detect token dimension from first sample
+        try:
+            sample_tokens = list(tokens_root.glob('*.pt'))[:1]
+            if sample_tokens:
+                sample_data = torch.load(str(sample_tokens[0]), map_location='cpu')
+                if isinstance(sample_data, dict) and 'img_tokens' in sample_data:
+                    # VideoMAE format detected
+                    token_dim = sample_data['img_tokens'].shape[-1]
+                    projector_in_dim = token_dim
+                    detected_video_backbone = 'videomae_ego'
+                    print(f"[TrackB] Auto-detected VideoMAE tokens with dim={token_dim}")
+                elif isinstance(sample_data, dict) and 'tokens' in sample_data:
+                    # ResNet18 format
+                    token_dim = sample_data['tokens'].shape[-1]
+                    projector_in_dim = token_dim
+                    detected_video_backbone = 'resnet18'
+                    print(f"[TrackB] Auto-detected ResNet18 tokens with dim={token_dim}")
+        except Exception as e:
+            print(f"[TrackB] Warning: Could not auto-detect token dimension: {e}")
+    
     print(f"[TrackB] Projector: {projector_in_dim} -> {C}")
     projector = nn.Linear(projector_in_dim, C)
     fusion = TrackBFusion(FusionConfig(dim=C, layers=FUSION_LAYERS))
@@ -998,11 +1022,13 @@ def main():
                     f"verb={epoch_verb/n_steps:.4f}"
                 )
             if cfg.save_epoch_checkpoints:
-                checkpoints_dir = Path("local_extraction") / "runs" / "Track_B" / "checkpoints"
+                checkpoints_dir = _local_extraction / "runs" / "Track_B" / "checkpoints"
                 checkpoints_dir.mkdir(parents=True, exist_ok=True)
                 ts = datetime.now().strftime("%Y%m%d_%H%M%S")
                 ckpt_path_epoch = checkpoints_dir / f"trackB_epoch{epoch+1}_{ts}.pt"
                 cfg_dict = _config_to_dict(cfg)
+                cfg_dict['video_backbone'] = detected_video_backbone
+                cfg_dict['projector_in_dim'] = projector_in_dim
                 torch.save({
                     'projector': projector.state_dict(),
                     'fusion': fusion.state_dict(),
@@ -1028,11 +1054,13 @@ def main():
                         best_val = cur
                         no_improve = 0
                         if cfg.save_best_checkpoint:
-                            checkpoints_dir = Path("local_extraction") / "runs" / "Track_B" / "checkpoints"
+                            checkpoints_dir = _local_extraction / "runs" / "Track_B" / "checkpoints"
                             checkpoints_dir.mkdir(parents=True, exist_ok=True)
                             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
                             best_path = checkpoints_dir / f"trackB_best_{metric_name}_{cur:.4f}_{ts}.pt"
                             cfg_dict = _config_to_dict(cfg)
+                            cfg_dict['video_backbone'] = detected_video_backbone
+                            cfg_dict['projector_in_dim'] = projector_in_dim
                             payload = {
                                 'projector': projector.state_dict(),
                                 'fusion': fusion.state_dict(),
@@ -1072,11 +1100,13 @@ def main():
 
     # Save checkpoint with timestamp under local_extraction/runs/Track_B/checkpoints
     # Final timestamped checkpoint (applies to both demo and main)
-    checkpoints_dir = Path("local_extraction") / "runs" / "Track_B" / "checkpoints"
+    checkpoints_dir = _local_extraction / "runs" / "Track_B" / "checkpoints"
     checkpoints_dir.mkdir(parents=True, exist_ok=True)
     ts_final = datetime.now().strftime("%Y%m%d_%H%M%S")
     ckpt_path = checkpoints_dir / f"trackB_final_{ts_final}.pt"
     cfg_dict = _config_to_dict(cfg)
+    cfg_dict['video_backbone'] = detected_video_backbone
+    cfg_dict['projector_in_dim'] = projector_in_dim
     torch.save({
         'projector': projector.state_dict(),
         'fusion': fusion.state_dict(),

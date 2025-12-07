@@ -132,7 +132,16 @@ def _load_models(cfg: EvalConfig, device: str, checkpoint: Path):
     num_noun_classes = noun_w.shape[0] if noun_w is not None else 0
     num_verb_classes = verb_w.shape[0] if verb_w is not None else 0
     num_ttc_bins = ttc_bin_w.shape[0] if ttc_bin_w is not None else 0
-    projector = torch.nn.Linear(512, cfg.token_dim)
+    
+    # Infer projector input dimension from checkpoint weights
+    proj_state = ckpt.get('projector', {})
+    proj_weight = proj_state.get('weight', None)
+    if proj_weight is not None:
+        projector_in_dim = proj_weight.shape[1]  # (out_dim, in_dim)
+    else:
+        projector_in_dim = 512  # default for ResNet18
+    
+    projector = torch.nn.Linear(projector_in_dim, cfg.token_dim)
     fusion = TrackBFusion(FusionConfig(dim=cfg.token_dim, layers=cfg.fusion_layers))
     head_cfg = HeadConfig(
         dim=cfg.token_dim,
@@ -343,15 +352,39 @@ def evaluate(cfg: EvalConfig) -> Dict[str, Any]:
     if ckpt_path is None:
         raise FileNotFoundError("No checkpoint found under runs/Track_B/checkpoints. Train first.")
 
+    # Load checkpoint to get train_config (for tokens_root, video_backbone, etc.)
+    ckpt_for_config = torch.load(str(ckpt_path), map_location='cpu')
+    train_config_from_ckpt = ckpt_for_config.get('train_config', {})
+    tokens_root_from_ckpt = train_config_from_ckpt.get('tokens_root')
+    video_backbone_from_ckpt = train_config_from_ckpt.get('video_backbone', 'resnet18')
+    
+    # Build tokenizer config - use checkpoint's tokens_root if available
+    tok_cfg = TokenizerConfig()
+    
+    # Resolve tokens_root: training scripts save relative to local_extraction,
+    # but eval may run from the project root, so prepend local_extraction if needed
+    tokens_root_resolved = None
+    if tokens_root_from_ckpt:
+        tokens_root_resolved = Path('local_extraction') / tokens_root_from_ckpt
+        if not tokens_root_resolved.exists():
+            # Try as-is (may already be full path or run from local_extraction)
+            tokens_root_resolved = Path(tokens_root_from_ckpt)
+        tok_cfg.tokens_root = str(tokens_root_resolved)
+        print(f"[trackB.eval] Using tokens_root from checkpoint: {tokens_root_from_ckpt} -> resolved: {tokens_root_resolved}")
+    if video_backbone_from_ckpt:
+        tok_cfg.video_backbone = video_backbone_from_ckpt
+        print(f"[trackB.eval] Using video_backbone from checkpoint: {video_backbone_from_ckpt}")
+
     # Build dataset/loader
     ds_val = TrackBDataset(
         frames_root=cfg.frames_root,
         manifests_root=manifests_root,
         manifest_path=val_manifest,
-        tokenizer_cfg=TokenizerConfig(),
+        tokenizer_cfg=tok_cfg,
         candidate_limit=cfg.candidate_limit,
         normalize_ttc=cfg.normalize_ttc,
         synthetic_if_empty=True,
+        tokens_root=tokens_root_resolved,
     )
     print(f"[trackB.eval] val_manifest={val_manifest} records={len(ds_val.records)} parsed={len(ds_val.parsed)} frames_root={cfg.frames_root}")
     # Quick debug: count parsed candidates and missing frame paths
@@ -391,7 +424,24 @@ def evaluate(cfg: EvalConfig) -> Dict[str, Any]:
     train_config_from_ckpt = id_maps.get('train_config')
     # Load hotspot priors and CLIP (optional)
     # hotspot_default is read from the hotspot JSON ("default" field).
-    hotspot_table, hotspot_default = _load_hotspot_priors(cfg.hotspot_prior_path if cfg.use_hotspot_priors else None)
+    # Resolve hotspot path - use absolute path to avoid CWD issues
+    hotspot_path = None
+    if cfg.use_hotspot_priors and cfg.hotspot_prior_path:
+        hotspot_path = Path(cfg.hotspot_prior_path)
+        if not hotspot_path.exists():
+            # Try as absolute path under project root
+            _project_root = Path(__file__).resolve().parent.parent.parent  # Ego4d-LiteSTA
+            abs_path = _project_root / cfg.hotspot_prior_path
+            if abs_path.exists():
+                hotspot_path = abs_path
+                print(f"[trackB.eval] Resolved hotspot path: {hotspot_path}")
+            else:
+                # Try under local_extraction
+                alt_path = _project_root / 'local_extraction' / 'v2' / hotspot_path.name
+                if alt_path.exists():
+                    hotspot_path = alt_path
+                    print(f"[trackB.eval] Resolved hotspot path: {hotspot_path}")
+    hotspot_table, hotspot_default = _load_hotspot_priors(hotspot_path)
     clip_model, clip_preprocess, clip_noun_text = _maybe_load_clip(cfg, device, noun_id_list)
 
     # Accumulators (candidate-level)

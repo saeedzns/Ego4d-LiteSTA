@@ -887,6 +887,59 @@ def load_preextracted_videomae_frames(
         return None
 
 
+def load_preextracted_videomae_tokens(
+    frame_path: Path,
+    frames_root: Path,
+    tokens_root: Path,
+) -> Optional[Tuple[torch.Tensor, torch.Tensor, Tuple[int, int]]]:
+    """
+    Load pre-encoded VideoMAE tokens (already passed through encoder).
+    
+    This is MUCH faster than load_preextracted_videomae_frames because it
+    skips the VideoMAE encoder forward pass entirely.
+    
+    Expected .pt file format (from build_trackB_videomae_tokens.py):
+    {
+        'img_tokens': Tensor (N, D) - (196, 768)
+        'vid_tokens': Tensor (T', N, D) - (8, 196, 768)
+        'grid_hw': (H', W') - (14, 14)
+    }
+    
+    Args:
+        frame_path: Path to the annotation frame
+        frames_root: Root directory for frames (to determine UID)
+        tokens_root: Root directory for pre-encoded tokens
+    
+    Returns:
+        (img_tokens, vid_tokens, grid_hw) or None if not found
+    """
+    # Determine UID and frame index from frame path
+    uid = frame_path.parent.name
+    frame_idx = frame_path.stem
+    
+    # Look for pre-encoded token file: <uid>_<frame_idx>.pt
+    token_path = tokens_root / f"{uid}_{frame_idx}.pt"
+    
+    if not token_path.exists():
+        return None
+    
+    try:
+        data = torch.load(token_path, map_location='cpu')
+        
+        if isinstance(data, dict) and 'img_tokens' in data and 'vid_tokens' in data:
+            img_tokens = data['img_tokens']  # (N, D)
+            vid_tokens = data['vid_tokens']  # (T', N, D)
+            grid_hw = data.get('grid_hw', (14, 14))
+            return img_tokens, vid_tokens, grid_hw
+        else:
+            # Not the expected format
+            return None
+            
+    except Exception as e:
+        print(f"[VideoMAE] Error loading pre-encoded tokens for {uid}_{frame_idx}: {e}")
+        return None
+
+
 def get_tokens(
     frame_path: Path,
     frames_root: Path,
@@ -908,7 +961,8 @@ def get_tokens(
         transform: Optional pre-built transform (for resnet18 mode, avoids recreation)
         tokens_root: Optional path to pre-extracted tokens directory
             - For resnet18: expects v2/resnet18_tokens/<uid>/<frame>.pt
-            - For videomae_ego: expects videomae/tensors/<uid>.pt (raw frame tensors)
+            - For videomae_ego: expects videomae_trackB_tokens/tokens/<uid>_<frame>.pt (pre-encoded tokens)
+              OR videomae_trackB_tensors/tensors/<uid>_<frame>.pt (raw frame tensors, slower)
     
     Returns:
         img_tokens: (N, C) last-frame tokens
@@ -917,6 +971,15 @@ def get_tokens(
     """
     # Try loading pre-extracted tokens first
     if tokens_root is not None:
+        # FIRST: Always try VideoMAE pre-encoded tokens (format auto-detected)
+        # These are the fastest path - skip encoder entirely
+        preencoded = load_preextracted_videomae_tokens(
+            frame_path, frames_root, tokens_root
+        )
+        if preencoded is not None:
+            return preencoded
+        
+        # FALLBACK based on video_backbone setting
         if cfg.video_backbone == "resnet18":
             preextracted = load_preextracted_tokens(
                 frame_path, frames_root, tokens_root, cfg.time_len, cfg.time_stride
@@ -924,7 +987,7 @@ def get_tokens(
             if preextracted is not None:
                 return preextracted
         elif cfg.video_backbone == "videomae_ego":
-            # Load pre-extracted VideoMAE frame tensors (skips video decoding)
+            # Try loading pre-extracted frame tensors (still runs encoder)
             preextracted = load_preextracted_videomae_frames(
                 frame_path, frames_root, tokens_root, cfg
             )
