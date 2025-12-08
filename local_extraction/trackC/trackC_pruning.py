@@ -58,6 +58,10 @@ def _parse_args():
                         help='Override checkpoint path')
     parser.add_argument('--no_pruning', action='store_true',
                         help='Disable pruning (baseline mode)')
+    parser.add_argument('--hotspot', type=str, default=None, choices=['on', 'off'],
+                        help='Enable/disable hotspot priors (overrides config)')
+    parser.add_argument('--clip', type=str, default=None, choices=['on', 'off'],
+                        help='Enable/disable CLIP re-ranking (overrides config)')
     return parser.parse_args()
 
 # Parse args before loading config
@@ -132,6 +136,17 @@ class EvalConfig:
     candidate_limit: int = _cfg.get('training.candidate_limit', 16)
     normalize_ttc: bool = _cfg.get('training.normalize_ttc', True)
     num_workers: int = _cfg.get('runtime.num_workers', 0)
+    # Pre-extracted tokens (for faster VideoMAE inference)
+    tokens_root: Optional[Path] = Path(_cfg.get('data.tokens_root')) if _cfg.get('data.tokens_root') else None
+    # Hotspot priors
+    use_hotspot_priors: bool = _cfg.get('evaluation.hotspot_priors.enabled', False)
+    hotspot_prior_path: Optional[Path] = Path(_cfg.get('evaluation.hotspot_priors.path')) if _cfg.get('evaluation.hotspot_priors.path') else None
+    hotspot_alpha: float = _cfg.get('evaluation.hotspot_priors.alpha', 0.3)
+    # CLIP re-ranking
+    use_clip_rerank: bool = _cfg.get('evaluation.clip_rerank.enabled', False)
+    clip_weight: float = _cfg.get('evaluation.clip_rerank.weight', 0.3)
+    clip_model: str = _cfg.get('evaluation.clip_rerank.model', 'ViT-B/32')
+    noun_label_path: Optional[Path] = Path(_cfg.get('paths.org_annotations', 'local_extraction/v2/org_annotations')) / "fho_sta_val_height-540.json"
 
 
 @dataclass
@@ -271,6 +286,154 @@ def _load_models(checkpoint: Path, device: str) -> Tuple[torch.nn.Module, TrackB
         "train_config": ckpt.get("train_config"),
     }
     return projector, fusion, head, num_classes, extra
+
+
+# ================== HOTSPOT PRIORS ==================
+def _load_hotspot_priors(path: Optional[Path]) -> Tuple[Dict[Tuple[int, int], float], float]:
+    """
+    Load hotspot priors from JSON.
+    Returns (grid_dict, max_val) where grid_dict maps (verb_id, noun_id) -> prior score.
+    """
+    if path is None:
+        return {}, 1.0
+    p = Path(path)
+    if not p.exists():
+        # Try relative to repo root
+        p = _REPO_ROOT / path
+    if not p.exists():
+        print(f"[trackC] hotspot prior file not found: {p}")
+        return {}, 1.0
+    try:
+        with open(p, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        grid = {}
+        max_val = 1e-9
+        for k, v in data.items():
+            parts = k.split('_')
+            if len(parts) == 2:
+                vid, nid = int(parts[0]), int(parts[1])
+                grid[(vid, nid)] = float(v)
+                max_val = max(max_val, float(v))
+        print(f"[trackC] loaded {len(grid)} hotspot priors from {p}")
+        return grid, max_val
+    except Exception as e:
+        print(f"[trackC] failed to load hotspot priors from {p}: {e}")
+        return {}, 1.0
+
+
+def _get_hotspot_score(grid: Dict[Tuple[int, int], float], max_val: float, verb_id: int, noun_id: int) -> float:
+    """Get hotspot prior score for a (verb, noun) pair, normalized to [0, 1]."""
+    if not grid:
+        return 0.5
+    score = grid.get((verb_id, noun_id), 0.0)
+    return score / max_val if max_val > 0 else 0.5
+
+
+# ================== CLIP RE-RANKING ==================
+_clip_model_cache: Dict[str, Any] = {}
+
+def _load_clip_model(model_name: str, device: str):
+    """Load CLIP model (cached)."""
+    cache_key = f"{model_name}_{device}"
+    if cache_key in _clip_model_cache:
+        return _clip_model_cache[cache_key]
+    try:
+        import clip
+        model, preprocess = clip.load(model_name, device=device)
+        model.eval()
+        _clip_model_cache[cache_key] = (model, preprocess)
+        print(f"[trackC] loaded CLIP model: {model_name}")
+        return model, preprocess
+    except ImportError:
+        print("[trackC] CLIP not available (pip install git+https://github.com/openai/CLIP.git)")
+        return None, None
+    except Exception as e:
+        print(f"[trackC] failed to load CLIP model: {e}")
+        return None, None
+
+
+def _load_noun_labels(path: Optional[Path]) -> Dict[int, str]:
+    """Load noun ID -> label mapping from Ego4D annotations."""
+    if path is None:
+        return {}
+    p = Path(path)
+    if not p.exists():
+        p = _REPO_ROOT / path
+    if not p.exists():
+        return {}
+    try:
+        with open(p, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        # Build noun_id -> noun_name mapping from annotations
+        noun_map = {}
+        if 'noun_categories' in data:
+            for cat in data['noun_categories']:
+                noun_map[cat['id']] = cat['name']
+        elif 'annotations' in data:
+            for ann in data['annotations']:
+                if 'noun' in ann and 'noun_label' in ann:
+                    noun_map[ann['noun']] = ann['noun_label']
+        return noun_map
+    except Exception as e:
+        print(f"[trackC] failed to load noun labels: {e}")
+        return {}
+
+
+def _clip_score_candidates(
+    clip_model,
+    clip_preprocess,
+    frame_path: Path,
+    boxes: List[Tuple[float, float, float, float]],
+    noun_ids: List[int],
+    noun_labels: Dict[int, str],
+    device: str,
+) -> List[float]:
+    """Compute CLIP similarity scores for each candidate box."""
+    if clip_model is None or not boxes:
+        return [0.5] * len(boxes)
+    
+    try:
+        import clip
+        from PIL import Image
+        
+        img = Image.open(frame_path).convert('RGB')
+        img_w, img_h = img.size
+        
+        scores = []
+        for i, box in enumerate(boxes):
+            x1, y1, x2, y2 = box
+            # Convert normalized coords to pixels
+            px1 = int(x1 * img_w)
+            py1 = int(y1 * img_h)
+            px2 = int(x2 * img_w)
+            py2 = int(y2 * img_h)
+            
+            # Crop and preprocess
+            crop = img.crop((px1, py1, px2, py2))
+            if crop.size[0] < 10 or crop.size[1] < 10:
+                scores.append(0.5)
+                continue
+            
+            crop_tensor = clip_preprocess(crop).unsqueeze(0).to(device)
+            
+            # Get noun label for this candidate
+            noun_id = noun_ids[i] if i < len(noun_ids) else -1
+            noun_text = noun_labels.get(noun_id, "object")
+            text_prompt = f"a photo of {noun_text}"
+            text_tokens = clip.tokenize([text_prompt]).to(device)
+            
+            with torch.no_grad():
+                img_features = clip_model.encode_image(crop_tensor)
+                text_features = clip_model.encode_text(text_tokens)
+                img_features = img_features / img_features.norm(dim=-1, keepdim=True)
+                text_features = text_features / text_features.norm(dim=-1, keepdim=True)
+                similarity = (img_features @ text_features.T).item()
+            
+            scores.append((similarity + 1.0) / 2.0)  # Normalize to [0, 1]
+        
+        return scores
+    except Exception as e:
+        return [0.5] * len(boxes)
 
 
 def _grid_rollout(fusion: TrackBFusion, img_tokens: torch.Tensor, vid_tokens: torch.Tensor) -> torch.Tensor:
@@ -438,7 +601,45 @@ def evaluate(cfg: EvalConfig, rgtp_cfg: RGTPConfig, instr_cfg: Optional[Instrume
     noun_id_list = extra.get("noun_id_list") or []
     verb_id_list = extra.get("verb_id_list") or []
     train_config_from_ckpt = extra.get("train_config")
+    
+    # Create tokenizer config with correct video backbone
     tokenizer_cfg = TokenizerConfig()
+    tokenizer_cfg.video_backbone = _video_backbone  # Override with CLI arg
+    
+    # Resolve tokens_root for pre-extracted features (much faster for VideoMAE)
+    tokens_root = None
+    if cfg.tokens_root:
+        tokens_root = cfg.tokens_root
+        if not tokens_root.is_absolute():
+            local_extraction_dir = Path(__file__).resolve().parent.parent
+            tokens_root = local_extraction_dir / cfg.tokens_root
+        if tokens_root.exists():
+            print(f"[TrackC] Using pre-extracted tokens: {tokens_root}")
+        else:
+            print(f"[TrackC] Warning: tokens_root not found, falling back to on-the-fly extraction: {tokens_root}")
+            tokens_root = None
+    elif _video_backbone == 'videomae_ego':
+        # Auto-detect VideoMAE tokens
+        local_extraction_dir = Path(__file__).resolve().parent.parent
+        auto_tokens = local_extraction_dir / "videomae_trackB_tokens_scratch" / "tokens"
+        if auto_tokens.exists():
+            tokens_root = auto_tokens
+            print(f"[TrackC] Auto-detected VideoMAE tokens: {tokens_root}")
+    
+    # Set VideoMAE weights path if using videomae backbone
+    if _video_backbone == 'videomae_ego':
+        # Look for VideoMAE weights at the standard location
+        local_extraction_dir = Path(__file__).resolve().parent.parent
+        videomae_paths = [
+            local_extraction_dir / "videomae_local_part" / "checkpoints_ego_scratch" / "videomae_ego_scratch_last.pt",
+            local_extraction_dir / "videomae_local_part" / "checkpoints_ego_scratch" / "videomae_ego_scratch_best.pt",
+            local_extraction_dir / "runs" / "VideoMAE" / "videomae_ego_encoder.pt",
+        ]
+        for vpath in videomae_paths:
+            if vpath.exists():
+                tokenizer_cfg.videomae_weights_path = str(vpath)
+                print(f"[TrackC] Using VideoMAE weights: {vpath}")
+                break
 
     ds_val = TrackBDataset(
         frames_root=cfg.frames_root,
@@ -448,6 +649,7 @@ def evaluate(cfg: EvalConfig, rgtp_cfg: RGTPConfig, instr_cfg: Optional[Instrume
         candidate_limit=cfg.candidate_limit,
         normalize_ttc=cfg.normalize_ttc,
         synthetic_if_empty=False,
+        tokens_root=tokens_root,
     )
 
     loader = torch.utils.data.DataLoader(
@@ -461,6 +663,21 @@ def evaluate(cfg: EvalConfig, rgtp_cfg: RGTPConfig, instr_cfg: Optional[Instrume
     print(f"[trackC] checkpoint={checkpoint}")
     print(f"[trackC] val_manifest={val_manifest} records={len(ds_val.records)} parsed={len(ds_val.parsed)}")
     print(f"[trackC] pruning enabled={rgtp_cfg.enabled} rate={rgtp_cfg.rate:.2f} min_keep={rgtp_cfg.min_keep}")
+    print(f"[trackC] hotspot_priors={cfg.use_hotspot_priors} clip_rerank={cfg.use_clip_rerank}")
+
+    # Load hotspot priors if enabled
+    hotspot_grid: Dict[Tuple[int, int], float] = {}
+    hotspot_max_val = 1.0
+    if cfg.use_hotspot_priors:
+        hotspot_grid, hotspot_max_val = _load_hotspot_priors(cfg.hotspot_prior_path)
+    
+    # Load CLIP model if enabled
+    clip_model = None
+    clip_preprocess = None
+    noun_labels: Dict[int, str] = {}
+    if cfg.use_clip_rerank:
+        clip_model, clip_preprocess = _load_clip_model(cfg.clip_model, device)
+        noun_labels = _load_noun_labels(cfg.noun_label_path)
 
     logits_list: List[torch.Tensor] = []
     labels_list: List[torch.Tensor] = []
@@ -689,7 +906,53 @@ def evaluate(cfg: EvalConfig, rgtp_cfg: RGTPConfig, instr_cfg: Optional[Instrume
                         # Next-active probabilities per candidate
                         probs = torch.softmax(logits, dim=1)
                         base_scores = probs[:, 1] if probs.shape[1] > 1 else probs[:, 0]
-                        score_tensor = base_scores
+                        score_tensor = base_scores.clone()
+                        
+                        # Apply CLIP re-ranking if enabled
+                        if cfg.use_clip_rerank and clip_model is not None:
+                            # Get predicted noun IDs for each candidate
+                            pred_noun_ids_for_clip = []
+                            if "noun_logits" in out:
+                                noun_logits_full = out["noun_logits"][0].cpu()
+                                for cidx in range(logits.size(0)):
+                                    local_noun = int(torch.argmax(noun_logits_full[cidx]).item())
+                                    if noun_id_list and 0 <= local_noun < len(noun_id_list):
+                                        pred_noun_ids_for_clip.append(int(noun_id_list[local_noun]))
+                                    else:
+                                        pred_noun_ids_for_clip.append(-1)
+                            else:
+                                pred_noun_ids_for_clip = [-1] * logits.size(0)
+                            
+                            # Get frame path for CLIP scoring
+                            frame_path = sample.get('frame_path')
+                            if frame_path is not None:
+                                clip_scores = _clip_score_candidates(
+                                    clip_model, clip_preprocess,
+                                    Path(frame_path),
+                                    sample['bboxes'],
+                                    pred_noun_ids_for_clip,
+                                    noun_labels,
+                                    device,
+                                )
+                                clip_tensor = torch.tensor(clip_scores, dtype=score_tensor.dtype)
+                                score_tensor = (1.0 - cfg.clip_weight) * score_tensor + cfg.clip_weight * clip_tensor
+                        
+                        # Apply hotspot priors if enabled
+                        if cfg.use_hotspot_priors and hotspot_grid:
+                            if "noun_logits" in out and "verb_logits" in out:
+                                noun_logits_full = out["noun_logits"][0].cpu()
+                                verb_logits_full = out["verb_logits"][0].cpu()
+                                hotspot_scores = []
+                                for cidx in range(logits.size(0)):
+                                    local_noun = int(torch.argmax(noun_logits_full[cidx]).item())
+                                    local_verb = int(torch.argmax(verb_logits_full[cidx]).item())
+                                    global_noun = int(noun_id_list[local_noun]) if noun_id_list and 0 <= local_noun < len(noun_id_list) else -1
+                                    global_verb = int(verb_id_list[local_verb]) if verb_id_list and 0 <= local_verb < len(verb_id_list) else -1
+                                    hs = _get_hotspot_score(hotspot_grid, hotspot_max_val, global_verb, global_noun)
+                                    hotspot_scores.append(hs)
+                                hotspot_tensor = torch.tensor(hotspot_scores, dtype=score_tensor.dtype)
+                                score_tensor = (1.0 - cfg.hotspot_alpha) * score_tensor + cfg.hotspot_alpha * hotspot_tensor
+                        
                         order_full = torch.argsort(score_tensor, descending=True)
 
                         # Top-1 index (for legacy N / N+V / N+δ / All)
@@ -984,6 +1247,14 @@ def main() -> None:
         eval_cfg.val_manifest = Path(runtime_cfg.val_manifest)
     if runtime_cfg.stageB_run:
         eval_cfg.stageB_run = Path(runtime_cfg.stageB_run)
+    
+    # Override hotspot/clip from CLI
+    if _cli_args.hotspot is not None:
+        eval_cfg.use_hotspot_priors = (_cli_args.hotspot == 'on')
+        print(f"[trackC] CLI override: hotspot_priors = {eval_cfg.use_hotspot_priors}")
+    if _cli_args.clip is not None:
+        eval_cfg.use_clip_rerank = (_cli_args.clip == 'on')
+        print(f"[trackC] CLI override: clip_rerank = {eval_cfg.use_clip_rerank}")
 
     rgtp_cfg = RGTPConfig(
         enabled=runtime_cfg.pruning_enabled and runtime_cfg.rgtp_rate > 0,
@@ -1022,6 +1293,8 @@ def main() -> None:
                 'checkpoint': runtime_cfg.checkpoint,
                 'pruning_enabled': runtime_cfg.pruning_enabled,
                 'rgtp_rate': runtime_cfg.rgtp_rate,
+                'use_hotspot': eval_cfg.use_hotspot_priors,
+                'use_clip': eval_cfg.use_clip_rerank,
             }
         })
         run_logger.log_metrics(metrics)

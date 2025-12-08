@@ -1,0 +1,50 @@
+{
+  "checkpoint": "D:\\Thesis\\Ego4d-LiteSTA\\local_extraction\\runs\\Track_B\\checkpoints\\trackB_best_mAP_0.3311_20251207_220842.pt",
+  "monitor_metric": "mAP",
+  "monitor_value": 0.3310554325580597,
+  "timestamp": "20251207_220842",
+  "metrics": {
+    "accuracy": 0.654943585395813,
+    "mAP": 0.3310554325580597,
+    "ttc_mae_seconds": 0.22308452427387238,
+    "num_candidates": 1507,
+    "class_counts": {
+      "0": 1037,
+      "1": 470
+    }
+  },
+  "train_config": {
+    "amp": false,
+    "batch_size": 8,
+    "candidate_limit": 16,
+    "demo_manifest": "D:\\Thesis\\Ego4d-LiteSTA\\local_extraction\\runs\\Track_A\\trackA_stageB_20251117_184342\\head_train.jsonl",
+    "demo_steps": 10,
+    "demo_use_real_labels": true,
+    "demo_variant": "loader",
+    "early_stopping_patience": 5,
+    "epochs": 20,
+    "eval_every": 1,
+    "greater_is_better": true,
+    "label_smoothing": 0.05,
+    "loss_w_next": 1.0,
+    "loss_w_noun": 1.0,
+    "loss_w_ttc": 1.0,
+    "loss_w_verb": 1.0,
+    "lr": 0.001,
+    "min_lr": 1e-05,
+    "mode": "main",
+    "monitor_metric": "mAP",
+    "normalize_ttc": true,
+    "save_best_checkpoint": true,
+    "save_epoch_checkpoints": true,
+    "stageB_run": null,
+    "tokens_root": "videomae_trackB_tokens_scratch/tokens",
+    "train_manifest": "D:\\Thesis\\Ego4d-LiteSTA\\local_extraction\\runs\\Track_A\\trackA_stageB_20251117_184342\\head_train.jsonl",
+    "use_multi_task_labels": true,
+    "use_ttc_bins": false,
+    "val_manifest": "D:\\Thesis\\Ego4d-LiteSTA\\local_extraction\\runs\\Track_A\\trackA_stageB_20251117_184342\\head_val.jsonl",
+    "warmup_epochs": 1.0,
+    "video_backbone": "videomae_ego",
+    "projector_in_dim": 768
+  }
+}

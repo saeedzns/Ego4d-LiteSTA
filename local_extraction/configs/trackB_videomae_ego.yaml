@@ -53,9 +53,9 @@ training:
   # Hyperparameters
   epochs: 20
   batch_size: 8
-  lr: 5.0e-4           # Slightly lower LR for pretrained features
+  lr: 0.001           # Slightly lower LR for pretrained features
   min_lr: 1.0e-5
-  warmup_epochs: 2.0   # Longer warmup for new backbone
+  warmup_epochs: 1.0   # Longer warmup for new backbone
   
   # Regularization
   label_smoothing: 0.05

@@ -28,6 +28,7 @@ from typing import List, Dict, Any, Tuple, Optional
 
 import json
 import random
+import numpy as np
 
 import torch
 import torch.nn as nn
@@ -50,6 +51,8 @@ def _parse_args():
                         help='Override batch size')
     parser.add_argument('--lr', type=float, default=None,
                         help='Override learning rate')
+    parser.add_argument('--seed', type=int, default=None,
+                        help='Override random seed for reproducibility')
     return parser.parse_args()
 
 # Parse args before loading config (so we can use --config)
@@ -166,6 +169,9 @@ class TrainConfig:
     loss_w_noun: float = _cfg.get('multi_task.loss_weights.noun', 0.25)
     loss_w_verb: float = _cfg.get('multi_task.loss_weights.verb', 0.25)
     loss_w_ttc: float = _cfg.get('multi_task.loss_weights.ttc', 1.0)
+    
+    # Reproducibility
+    seed: int = _cfg.get('seed', 42)
 
 
 def _config_to_dict(cfg: TrainConfig) -> Dict[str, Any]:
@@ -666,8 +672,17 @@ def _print_config(cfg: TrainConfig):
     })
 
 
+def _set_seed(seed: int) -> None:
+    """Set random seeds for reproducibility."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+    print(f"[TrackB] Random seed set to {seed}")
+
+
 def main():
-    torch.manual_seed(0)
     cfg = TrainConfig()  # edit TrainConfig above to change behavior
     
     # Apply CLI argument overrides
@@ -679,6 +694,10 @@ def main():
         cfg.batch_size = _cli_args.batch_size
     if _cli_args.lr is not None:
         cfg.lr = _cli_args.lr
+    if _cli_args.seed is not None:
+        cfg.seed = _cli_args.seed
+    
+    _set_seed(cfg.seed)  # Set seed from config for reproducibility
     
     # Initialize run logger
     from core import RunLogger

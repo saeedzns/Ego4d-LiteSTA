@@ -168,7 +168,7 @@ data:
   # Set to "v2/resnet18_tokens" after running:
   #   python -m trackB.extract_resnet_tokens
   # Set to null for on-the-fly extraction (slow but no pre-processing needed)
-  tokens_root: null
+  tokens_root: "v2/resnet18_tokens"
 
 # -----------------------------------------------------------------------------
 # Smoke Test Configuration

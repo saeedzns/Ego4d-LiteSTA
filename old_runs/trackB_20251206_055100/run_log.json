@@ -1,0 +1,74 @@
+{
+  "run_id": "trackB_20251206_055100",
+  "track": "trackB",
+  "stage": null,
+  "timestamp": "2025-12-06T05:51:00.461359",
+  "git": {
+    "commit": "6a22fa356eb5",
+    "branch": "main",
+    "dirty": true,
+    "remote": "git@github.com:saeedzns/Ego4d-LiteSTA.git"
+  },
+  "system": {
+    "python_version": "3.13.3",
+    "platform": "Windows-11-10.0.26100-SP0",
+    "hostname": "Saeedzns",
+    "cwd": "D:\\Thesis\\Ego4d-LiteSTA",
+    "is_colab": false,
+    "torch_version": "2.9.1+cpu",
+    "cuda_available": false
+  },
+  "config": {
+    "amp": false,
+    "batch_size": 8,
+    "candidate_limit": 16,
+    "demo_manifest": null,
+    "demo_steps": 10,
+    "demo_use_real_labels": true,
+    "demo_variant": "loader",
+    "early_stopping_patience": 5,
+    "epochs": 20,
+    "eval_every": 1,
+    "greater_is_better": true,
+    "label_smoothing": 0.05,
+    "loss_w_next": 1.0,
+    "loss_w_noun": 1.0,
+    "loss_w_ttc": 1.0,
+    "loss_w_verb": 1.0,
+    "lr": 0.001,
+    "min_lr": 1e-05,
+    "mode": "main",
+    "monitor_metric": "mAP",
+    "normalize_ttc": true,
+    "save_best_checkpoint": true,
+    "save_epoch_checkpoints": true,
+    "stageB_run": null,
+    "tokens_root": null,
+    "train_manifest": null,
+    "use_multi_task_labels": true,
+    "use_ttc_bins": false,
+    "val_manifest": null,
+    "warmup_epochs": 1.0
+  },
+  "config_overrides": {},
+  "cli_args": [
+    "--config",
+    "trackB_resnet18_baseline"
+  ],
+  "start_time": "2025-12-06T05:51:00.736807",
+  "end_time": "2025-12-06T10:17:34.660198",
+  "duration_seconds": 15993.923391,
+  "metrics": {
+    "preview_accuracy": 0.5
+  },
+  "artifacts": [
+    "local_extraction\\runs\\Track_B\\checkpoints\\trackB_final_20251206_101730.pt"
+  ],
+  "outputs": {
+    "final_checkpoint": "local_extraction\\runs\\Track_B\\checkpoints\\trackB_final_20251206_101730.pt"
+  },
+  "status": "completed",
+  "error": null,
+  "warnings": [],
+  "notes": ""
+}

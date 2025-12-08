@@ -950,6 +950,8 @@ if __name__ == '__main__':
     parser.add_argument('--val_manifest', type=str, default=None, help='Explicit validation manifest path')
     parser.add_argument('--stageB_run', type=str, default=None, help='TrackA StageB run directory')
     parser.add_argument('--ttc_mode', type=str, default='reg', choices=['reg', 'binned'], help='TTC mode for N+δ (reg or binned)')
+    parser.add_argument('--hotspot', type=str, default=None, choices=['on', 'off'], help='Enable/disable hotspot priors (overrides config)')
+    parser.add_argument('--clip', type=str, default=None, choices=['on', 'off'], help='Enable/disable CLIP re-ranking (overrides config)')
     args = parser.parse_args()
 
     cfg = EvalConfig()
@@ -960,5 +962,11 @@ if __name__ == '__main__':
     if args.stageB_run:
         cfg.stageB_run = args.stageB_run
     cfg.ttc_mode = args.ttc_mode
+    
+    # Override hotspot/clip from CLI
+    if args.hotspot is not None:
+        cfg.use_hotspot_priors = (args.hotspot == 'on')
+    if args.clip is not None:
+        cfg.use_clip_rerank = (args.clip == 'on')
 
     evaluate(cfg)

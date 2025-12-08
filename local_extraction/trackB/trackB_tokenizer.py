@@ -380,10 +380,22 @@ def _load_videomae_encoder_cached(cfg: TokenizerConfig) -> nn.Module:
     # Load weights
     weights_path = cfg.videomae_weights_path
     if weights_path is None:
-        # Default path
-        weights_path = str(Path(__file__).parent.parent / "runs" / "VideoMAE" / "videomae_ego_encoder.pt")
-    
-    weights_path = Path(weights_path)
+        # Default path - try multiple locations
+        local_extraction_dir = Path(__file__).resolve().parent.parent
+        candidate_paths = [
+            local_extraction_dir / "runs" / "VideoMAE" / "videomae_ego_encoder.pt",
+            local_extraction_dir / "videomae_local_part" / "checkpoints_ego_scratch" / "videomae_ego_scratch_last.pt",
+            local_extraction_dir / "videomae_local_part" / "videomae_ego_encoder.pt",
+        ]
+        weights_path = None
+        for cand in candidate_paths:
+            if cand.exists():
+                weights_path = cand
+                break
+        if weights_path is None:
+            weights_path = candidate_paths[0]  # Use first as default for error message
+    else:
+        weights_path = Path(weights_path)
     
     # Handle relative paths: resolve from local_extraction directory
     if not weights_path.is_absolute():
@@ -421,16 +433,57 @@ def _load_videomae_encoder_cached(cfg: TokenizerConfig) -> nn.Module:
         # Use HuggingFace VideoMAEModel - only if transformers is available
         try:
             from transformers import VideoMAEModel, VideoMAEConfig as HFVideoMAEConfig
+            import torch.nn.functional as F
             
-            hf_config = HFVideoMAEConfig(**ckpt['config'])
+            # Override num_frames to match our inference time_len
+            # This is necessary because positional embeddings depend on num_frames
+            saved_num_frames = ckpt['config'].get('num_frames', 16)
+            target_num_frames = cfg.time_len
+            
+            config_dict = ckpt['config'].copy()
+            config_dict['num_frames'] = target_num_frames
+            
+            hf_config = HFVideoMAEConfig(**config_dict)
             encoder = VideoMAEModel(hf_config)
             
-            # Load encoder weights
+            # Load encoder weights, handling positional embedding interpolation
             encoder_weights = {k[len('videomae.'):]: v for k, v in ckpt['model'].items() if k.startswith('videomae.')}
+            
+            # Interpolate positional embeddings if num_frames changed
+            pos_key = 'embeddings.position_embeddings'
+            if pos_key in encoder_weights and saved_num_frames != target_num_frames:
+                old_pos = encoder_weights[pos_key]  # (1, N_old, D)
+                
+                # Calculate spatial and temporal dimensions
+                patch_size = hf_config.patch_size
+                tubelet_size = hf_config.tubelet_size
+                image_size = hf_config.image_size
+                
+                H_patches = image_size // patch_size
+                W_patches = image_size // patch_size
+                T_old = saved_num_frames // tubelet_size
+                T_new = target_num_frames // tubelet_size
+                N_spatial = H_patches * W_patches
+                
+                # Reshape to (1, T, H*W, D) for interpolation
+                D = old_pos.shape[-1]
+                old_pos_4d = old_pos.view(1, T_old, N_spatial, D)
+                
+                # Interpolate temporally: (1, T_old, N_spatial, D) -> (1, T_new, N_spatial, D)
+                old_pos_4d = old_pos_4d.permute(0, 3, 2, 1)  # (1, D, N_spatial, T_old)
+                new_pos_4d = F.interpolate(old_pos_4d, size=(N_spatial, T_new), mode='bilinear', align_corners=False)
+                new_pos_4d = new_pos_4d.permute(0, 3, 2, 1)  # (1, T_new, N_spatial, D)
+                
+                # Reshape back to (1, N_new, D)
+                new_pos = new_pos_4d.reshape(1, T_new * N_spatial, D)
+                encoder_weights[pos_key] = new_pos
+                
+                print(f"[trackB.tokenizer] Interpolated pos embeddings: {saved_num_frames} -> {target_num_frames} frames")
+            
             encoder.load_state_dict(encoder_weights, strict=False)
             
             print(f"[trackB.tokenizer] Loaded HuggingFace VideoMAE encoder from {weights_path}")
-            print(f"  Hidden size: {hf_config.hidden_size}, Layers: {hf_config.num_hidden_layers}")
+            print(f"  Hidden size: {hf_config.hidden_size}, Layers: {hf_config.num_hidden_layers}, num_frames: {target_num_frames}")
         except ImportError:
             print("[trackB.tokenizer] HuggingFace transformers not installed, using custom loader...")
             is_huggingface = False  # Fall through to custom loader
