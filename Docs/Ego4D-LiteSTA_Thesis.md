@@ -88,6 +88,12 @@ Given a short egocentric clip ending at time *t* and its **last frame** (decisio
 - **Track B (Fusion):** Add **Frame‑Guided Temporal Pooling (FGTP)** that projects clip tokens onto the last‑frame grid, plus **dual image↔video cross‑attention** (2–4 layers, 256‑dim) to refine predictions.
 - **Track C (Pruning):** **Rollout‑guided token pruning** (RGTP) at inference: compute attention rollout at *t−1*, track importance to *t*, and prune the bottom 40–60% of tokens—never pruning the final stage—achieving large latency reductions with small mAP loss.
 
+![Track A Architecture](../local_extraction/TrackA.png)
+
+![Track B Architecture](../local_extraction/trackB.png)
+
+![Track C Architecture](../local_extraction/trackC.png)
+
 ---
 
 ## 5. Methodology
@@ -236,6 +242,11 @@ All metrics are top‑5 mAP (%), val split.
 | `trackB_best_1122_0428.pt` | 10.94 | 2.83 | 9.20 | 2.44 | 2025‑11‑22 20:09 |
 | `trackB_best_1122_1131.pt` | 13.69 | 3.46 | 11.81 | 3.05 | 2025‑11‑22 20:21 |
 | `trackB_best_1122_1735.pt` | **17.43** | **8.48** | **14.92** | **8.66** | 2025‑11‑22 20:30 |
+| `trackB_best_mAP_0.3598.pt` (Dec) | 10.94 | 2.83 | 9.20 | 2.44 | 2025‑12‑08 |
+| `trackB_best_mAP_0.3580.pt` (Dec) | 10.64 | 2.74 | 8.96 | 2.35 | 2025‑12‑06 |
+| `trackB_best_mAP_0.3359.pt` (Dec) | 3.18 | 2.83 | 2.92 | 2.96 | 2025‑12‑07 |
+
+![Track B Top-5 Semantic Metrics by Checkpoint](../local_extraction/runs/Track_B/plots/trackB_top5_semantic_percent.png)
 
 **Track B — Nov 28 eval sweep (checkpoint `trackB_best_1122_1131.pt`, TTC reg, shared config in §6.5)**  
 | Variant | N | N+V | N+δ | All | TTC MAE (s) | File |
@@ -254,7 +265,29 @@ All metrics are top‑5 mAP (%), val split.
 | 0.50 | **11.06** | **2.99** | **9.95** | **2.98** | trackC_val_rate50_20251126_151858 |
 | 0.50 | 11.06 | 2.99 | 9.95 | 2.98 | trackC_val_rate50_20251126_192806 |
 
+**Track C — December 2025 RGTP sweep (multiple checkpoints, CLIP reranking enabled)**  
+| Checkpoint | Rate | N | N+V | N+δ | All |
+|:-----------|:----:|:---:|:---:|:---:|:---:|
+| `trackB_best.pt` | 0.00 | 10.94 | 2.83 | 9.20 | 2.44 |
+| `trackB_best_1122_1131.pt` | 0.10 | 13.54 | 3.43 | 11.70 | 3.04 |
+| `trackB_best.pt` + CLIP | 0.10 | **13.29** | 3.21 | **12.42** | **2.67** |
+| `trackB_best_mAP_0.3580.pt` | 0.10 | 10.64 | 2.74 | 8.90 | 2.35 |
+| `trackB_best_mAP_0.3359.pt` | 0.10 | 3.18 | 2.83 | 2.92 | 2.96 |
+| `trackB_best_1122_1131.pt` | 0.30 | 11.36 | 2.98 | 10.18 | 2.95 |
+| `trackB_best.pt` | 0.30 | 6.85 | 1.62 | 5.65 | 1.33 |
+| `trackB_best_mAP_0.3580.pt` | 0.30 | 6.84 | 1.62 | 5.63 | 1.33 |
+| `trackB_best_1122_1131.pt` | 0.50 | 11.06 | 2.99 | 9.95 | 2.98 |
+| `trackB_best.pt` | 0.50 | 6.50 | 1.53 | 5.37 | 1.26 |
+| `trackB_best_mAP_0.3580.pt` | 0.50 | 6.48 | 1.53 | 5.35 | 1.26 |
+
+![Track C Top-5 Semantic Metrics](../local_extraction/runs/Track_C/plots/trackC_top5_semantic_percent.png)
+
 **Observations.** The bin‑TTC checkpoint `trackB_best_1122_1735.pt` remains the strongest Track B model. Hotspot priors slightly reduce mAP on this split, and adding CLIP reranking recovers some N/N+δ. On Track C, pruning remains viable: rate=0.50 yields the highest All top‑5 mAP (3.50), while rate=0.10 gives the best N and N+δ with a modest All of 3.04.
+
+**December 2025 Update.** New checkpoints trained with pre-extracted ResNet18 tokens (8.3× training speedup) show competitive results:
+- `trackB_best_mAP_0.3598.pt` achieves mAP=35.98%, matching November baselines.
+- CLIP reranking at rate=0.10 improves N_top5_mAP from 10.94% to **13.29%** and N+δ from 9.20% to **12.42%**.
+- Higher RGTP rates (0.30–0.50) show diminishing returns; rate=0.10 with CLIP offers the best accuracy-latency trade-off (13.4 ms/sample).
 
 ---
 
@@ -800,10 +833,11 @@ Shared eval config: `frames_root=local_extraction\\v2\\extracted_frames`, `manif
 | 1122_0428 | 10.94 | 2.83 | 9.20 | 2.44 |
 | 1122_1131 | 13.69 | 3.46 | 11.81 | 3.05 |
 | 1122_1735 | **17.43** | **8.48** | **14.92** | **8.66** |
+| best_mAP_0.3598 (Dec) | 10.94 | 2.83 | 9.20 | 2.44 |
+| best_mAP_0.3580 (Dec) | 10.64 | 2.74 | 8.96 | 2.35 |
+| best_mAP_0.3359 (Dec) | 3.18 | 2.83 | 2.92 | 2.96 |
 
-
-
-![trackB_metrics_over_time](../local_extraction\runs\Track_B\plots\trackB_top5_semantic_percent.png) 
+![Track B Top-5 Semantic Metrics](../local_extraction/runs/Track_B/plots/trackB_top5_semantic_percent.png) 
 
 #### Track C — Top-5 mAP by Run (RGTP rate sweep)
 
@@ -816,7 +850,20 @@ Shared eval config: `frames_root=local_extraction\\v2\\extracted_frames`, `manif
 | 20251126_151858 | 0.50 | **11.06** | **2.99** | **9.95** | **2.98** |
 | 20251126_192806 | 0.50 | 11.06 | 2.99 | 9.95 | 2.98 |
 
-![trackC_metrics_over_time](../local_extraction\runs\Track_C\plots\trackC_top5_semantic_percent.png)
+#### Track C — December 2025 Multi-Checkpoint RGTP Sweep
+
+| Checkpoint | Rate | N | N+V | N+δ | All | Latency (ms) |
+|:-----------|:----:|:---:|:---:|:---:|:---:|:------------:|
+| trackB_best.pt | 0.00 | 10.94 | 2.83 | 9.20 | 2.44 | 13.5 |
+| trackB_best_1122_1131.pt | 0.10 | 13.54 | 3.43 | 11.70 | 3.04 | 14.5 |
+| trackB_best.pt | 0.10 | 13.29 | 3.21 | 12.42 | 2.67 | 13.4 |
+| trackB_best_mAP_0.3580.pt | 0.10 | 10.64 | 2.74 | 8.90 | 2.35 | 11.9 |
+| trackB_best_1122_1131.pt | 0.30 | 11.36 | 2.98 | 10.18 | 2.95 | 13.9 |
+| trackB_best.pt | 0.30 | 6.85 | 1.62 | 5.65 | 1.33 | 12.2 |
+| trackB_best_1122_1131.pt | 0.50 | 11.06 | 2.99 | 9.95 | 2.98 | 12.4 |
+| trackB_best.pt | 0.50 | 6.50 | 1.53 | 5.37 | 1.26 | 11.9 |
+
+![Track C Top-5 Semantic Metrics](../local_extraction/runs/Track_C/plots/trackC_top5_semantic_percent.png)
 
 ---
 

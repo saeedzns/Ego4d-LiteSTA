@@ -532,6 +532,15 @@ def evaluate(cfg: EvalConfig) -> Dict[str, Any]:
                 pred_label = torch.argmax(probs, dim=1)
                 # Base next-active scores per candidate
                 base_scores = probs[:, 1] if probs.shape[1] > 1 else probs[:, 0]
+                
+                # Find GT positive box for this frame (for error analysis)
+                is_pos = s.get('is_positive', labels).cpu()
+                pos_indices = torch.nonzero(is_pos == 1, as_tuple=True)[0]
+                gt_box_coords = None
+                if pos_indices.numel() > 0:
+                    gt_idx = int(pos_indices[0].item())
+                    gt_box_coords = s['bboxes'][gt_idx]
+                
                 final_scores: List[float] = []
                 for i, box in enumerate(s['bboxes']):
                     # Candidate-level predictions for error analysis
@@ -599,6 +608,10 @@ def evaluate(cfg: EvalConfig) -> Dict[str, Any]:
                         'frame_path': str(s['frame_path']),
                         'cand_idx': i,
                         'x1': float(box[0]), 'y1': float(box[1]), 'x2': float(box[2]), 'y2': float(box[3]),
+                        'gt_x1': float(gt_box_coords[0]) if gt_box_coords else None,
+                        'gt_y1': float(gt_box_coords[1]) if gt_box_coords else None,
+                        'gt_x2': float(gt_box_coords[2]) if gt_box_coords else None,
+                        'gt_y2': float(gt_box_coords[3]) if gt_box_coords else None,
                         'label': int(labels[i].item()) if i < len(labels) else None,
                         'pred_label': int(pred_label[i].item()),
                         'prob_pos': base_pos,
