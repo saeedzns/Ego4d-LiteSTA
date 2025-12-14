@@ -39,6 +39,8 @@
     - [2.7.1 EgoVis workshop](#271-egovis-workshop-and-challenge-ecosystem)
     - [2.7.2 Curated lists](#272-curated-lists-and-awesome-repositories)
   - [2.8 Summary and Positioning of Ego4D-LiteSTA](#28-summary-and-positioning-of-ego4d-litesta)
+  - [2.9 Quantitative Reference Points (Ego4D-STA v2)](#29-quantitative-reference-points-ego4d-sta-v2)
+    - [2.9.1 Reported baselines (Top-5 mAP, percent)](#291-reported-baselines-top-5-map-percent)
 - [Chapter 3: Problem Definition and Data](#chapter-3-problem-definition-and-data)
   - [3.1 Task Definition (STA)](#31-task-definition-sta)
   - [3.2 Dataset, Splits, and Annotations (Ego4D-STA v2)](#32-dataset-splits-and-annotations-ego4d-sta-v2)
@@ -59,34 +61,108 @@
     - [3.4.7 Optional priors and reproducibility outputs](#347-optional-priors-and-reproducibility-outputs)
 - [Chapter 4: System Overview (Tracks A / B / C)](#chapter-4-system-overview-tracks-a--b--c)
   - [4.1 Design Principles](#41-design-principles)
+    - [4.1.1 Rationale](#411-rationale)
+    - [4.1.2 Principles](#412-principles)
   - [4.2 Track A Overview (Proposals + Manifests)](#42-track-a-overview-proposals--manifests)
+    - [4.2.1 Stages and contract](#421-stages-and-contract)
+    - [4.2.2 Outputs and downstream interface](#422-outputs-and-downstream-interface)
   - [4.3 Track B Overview (Lightweight Fusion Head)](#43-track-b-overview-lightweight-fusion-head)
+    - [4.3.1 Inputs and outputs](#431-inputs-and-outputs)
+    - [4.3.2 Candidate ranking under top-5](#432-candidate-ranking-under-top-5)
   - [4.4 Track C Overview (Training-Free Pruning)](#44-track-c-overview-training-free-pruning)
+    - [4.4.1 Motivation and scope](#441-motivation-and-scope)
+    - [4.4.2 Evaluation focus (accuracy–latency)](#442-evaluation-focus-accuracylatency)
 - [Chapter 5: Methodology](#chapter-5-methodology)
   - [5.1 Track A: Candidate Generation and Recall@K](#51-track-a-candidate-generation-and-recallk)
+    - [5.1.1 Candidate generation (Stage A)](#511-candidate-generation-stage-a)
+    - [5.1.2 Proposal evaluation: Recall@K](#512-proposal-evaluation-recallk)
+    - [5.1.3 Manifest construction and label attachment (Stage B)](#513-manifest-construction-and-label-attachment-stage-b)
   - [5.2 Track B: Tokenization, Fusion (FGTP + Dual Cross-Attention), and Heads](#52-track-b-tokenization-fusion-fgtp--dual-cross-attention-and-heads)
+    - [5.2.1 Inputs and representations](#521-inputs-and-representations)
+    - [5.2.2 Frame-Guided Temporal Pooling (FGTP)](#522-frame-guided-temporal-pooling-fgtp)
+    - [5.2.3 Dual cross-attention fusion](#523-dual-cross-attention-fusion)
+    - [5.2.4 Candidate pooling and per-candidate features](#524-candidate-pooling-and-per-candidate-features)
+    - [5.2.5 Prediction heads and scoring](#525-prediction-heads-and-scoring)
+    - [5.2.6 Training objective](#526-training-objective)
   - [5.3 Track C: Rollout-Guided Token Pruning (RGTP)](#53-track-c-rollout-guided-token-pruning-rgtp)
+    - [5.3.1 Motivation](#531-motivation)
+    - [5.3.2 Rollout-guided importance](#532-rollout-guided-importance)
+    - [5.3.3 Integration and evaluation](#533-integration-and-evaluation)
 - [Chapter 6: Implementation and Engineering](#chapter-6-implementation-and-engineering)
   - [6.1 Local/Colab Workflow and Tooling](#61-localcolab-workflow-and-tooling)
+    - [6.1.1 Local-first execution](#611-local-first-execution)
+    - [6.1.2 Minimal cloud usage](#612-minimal-cloud-usage)
+    - [6.1.3 Practical tooling choices](#613-practical-tooling-choices)
   - [6.2 Configuration System and Reproducible Runs](#62-configuration-system-and-reproducible-runs)
+    - [6.2.1 YAML configuration with inheritance and overrides](#621-yaml-configuration-with-inheritance-and-overrides)
+    - [6.2.2 Run logging as provenance](#622-run-logging-as-provenance)
   - [6.3 Data Validation and Failure Handling](#63-data-validation-and-failure-handling)
+    - [6.3.1 Validation checkpoints](#631-validation-checkpoints)
+    - [6.3.2 Failure handling strategy](#632-failure-handling-strategy)
 - [Chapter 7: Experimental Setup](#chapter-7-experimental-setup)
   - [7.1 Baselines and Compared Variants](#71-baselines-and-compared-variants)
+    - [7.1.1 Track A baselines (proposal generation)](#711-track-a-baselines-proposal-generation)
+    - [7.1.2 Track B baselines (candidate scoring and multi-task prediction)](#712-track-b-baselines-candidate-scoring-and-multi-task-prediction)
+    - [7.1.3 Track C baselines (efficiency knobs)](#713-track-c-baselines-efficiency-knobs)
   - [7.2 Training Protocols and Hyperparameters](#72-training-protocols-and-hyperparameters)
+    - [7.2.1 Data sources and splits](#721-data-sources-and-splits)
+    - [7.2.2 Optimization settings](#722-optimization-settings)
+    - [7.2.3 Multi-task settings](#723-multi-task-settings)
+    - [7.2.4 Checkpointing and model selection](#724-checkpointing-and-model-selection)
   - [7.3 Evaluation Protocol](#73-evaluation-protocol)
+    - [7.3.1 Track A evaluation](#731-track-a-evaluation)
+    - [7.3.2 Track B/C correctness evaluation](#732-track-bc-correctness-evaluation)
+    - [7.3.3 Track C efficiency evaluation](#733-track-c-efficiency-evaluation)
+    - [7.3.4 Reproducibility and traceability](#734-reproducibility-and-traceability)
 - [Chapter 8: Results](#chapter-8-results)
   - [8.1 Track A Results (Recall@K)](#81-track-a-results-recallk)
+    - [8.1.1 Reported metrics](#811-reported-metrics)
+    - [8.1.2 Key observations](#812-key-observations)
   - [8.2 Track B Results (N / N+V / N+δ, TTC)](#82-track-b-results-n--nv--n-δ-ttc)
+    - [8.2.1 Top-5 mAP variants](#821-top-5-map-variants)
+    - [8.2.2 TTC results](#822-ttc-results)
   - [8.3 Track C Results (Accuracy–Latency Pareto)](#83-track-c-results-accuracylatency-pareto)
+    - [8.3.1 Accuracy retained under pruning](#831-accuracy-retained-under-pruning)
+    - [8.3.2 Runtime and Pareto analysis](#832-runtime-and-pareto-analysis)
+  - [8.4 Comparison with Prior Work (Top-5 metrics)](#84-comparison-with-prior-work-top-5-metrics)
+    - [8.4.1 Reported literature baselines](#841-reported-literature-baselines)
+    - [8.4.2 Ego4D-LiteSTA vs reported baselines](#842-ego4d-litesta-vs-reported-baselines)
 - [Chapter 9: Ablations and Analysis](#chapter-9-ablations-and-analysis)
   - [9.1 Proposal K Sweeps](#91-proposal-k-sweeps)
+    - [9.1.1 Setup](#911-setup)
+    - [9.1.2 Findings](#912-findings)
   - [9.2 Fusion Depth and Token Dimensionality](#92-fusion-depth-and-token-dimensionality)
+    - [9.2.1 Setup](#921-setup)
+    - [9.2.2 Findings](#922-findings)
   - [9.3 TTC Modeling (Regression vs Bins)](#93-ttc-modeling-regression-vs-bins)
+    - [9.3.1 Setup](#931-setup)
+    - [9.3.2 Findings](#932-findings)
   - [9.4 Priors (Hotspots, CLIP) and Their Impact](#94-priors-hotspots-clip-and-their-impact)
+    - [9.4.1 Setup](#941-setup)
+    - [9.4.2 Findings](#942-findings)
 - [Chapter 10: Discussion, Limitations, and Future Work](#chapter-10-discussion-limitations-and-future-work)
+  - [10.1 Discussion](#101-discussion)
+    - [10.1.1 What worked well](#1011-what-worked-well)
+    - [10.1.2 Interactions between tracks](#1012-interactions-between-tracks)
+  - [10.2 Limitations](#102-limitations)
+    - [10.2.1 Data and annotations](#1021-data-and-annotations)
+    - [10.2.2 Modeling and efficiency](#1022-modeling-and-efficiency)
+  - [10.3 Future Work](#103-future-work)
+    - [10.3.1 Method extensions](#1031-method-extensions)
+    - [10.3.2 Engineering extensions](#1032-engineering-extensions)
 - [Chapter 11: Reproducibility Checklist](#chapter-11-reproducibility-checklist)
+  - [11.1 Data and manifests](#111-data-and-manifests)
+  - [11.2 Training and checkpoints](#112-training-and-checkpoints)
+  - [11.3 Evaluation and reporting](#113-evaluation-and-reporting)
+  - [11.4 Environment and determinism](#114-environment-and-determinism)
 - [Chapter 12: Ethical, Legal, and Social Implications (ELSI)](#chapter-12-ethical-legal-and-social-implications-elsi)
+  - [12.1 Data governance and privacy](#121-data-governance-and-privacy)
+  - [12.2 Bias, fairness, and representativeness](#122-bias-fairness-and-representativeness)
+  - [12.3 Responsible release and deployment](#123-responsible-release-and-deployment)
 - [Chapter 13: Conclusion](#chapter-13-conclusion)
+  - [13.1 Summary of contributions](#131-summary-of-contributions)
+  - [13.2 Summary of results](#132-summary-of-results)
+  - [13.3 Closing remarks](#133-closing-remarks)
 - [References](#references)
 - [Appendices](#appendices)
 
@@ -807,6 +883,22 @@ design of the Ego4D‑LiteSTA pipeline:
 5. **Ego–exo transfer is useful but not mandatory**  
    Surveyed works on ego–exo joint learning, synchronization‑based transfer, and retrieval‑augmented
    models show that exocentric data can help, especially for rare classes and global context.
+
+## 2.9 Quantitative Reference Points (Ego4D-STA v2)
+
+This section provides a compact numerical reference for the STA literature on Ego4D‑STA v2. The goal is to anchor expectations for later chapters; the numbers below are **reported** results from prior publications on the validation split.
+
+### 2.9.1 Reported baselines (Top-5 mAP, percent)
+
+Table 2.1 summarizes representative published results on Ego4D‑STA v2 validation using Top‑5 mAP (%). Columns follow the benchmark convention: **N** (noun), **N+V** (noun+verb), **N+δ** (noun+TTC tolerance), **All** (joint).
+
+| Method (reported) | N | N+V | N+δ | All |
+|---|---:|---:|---:|---:|
+| FRCNN+SF | 21.00 | 7.45 | 7.07 | 2.98 |
+| StillFast | 20.26 | 10.37 | 7.26 | 3.96 |
+| GANO v2 | 20.52 | 10.42 | 7.28 | 3.99 |
+| STAformer | 24.85 | 13.45 | 7.41 | 4.90 |
+| STAformer + MH + AFF | 29.39 | 15.38 | 9.94 | 5.67 |
    However, Ego‑Only, VideoMAE, and the Ego4D dataset itself make a strong case that **ego‑only
    pipelines are viable and competitive**, which aligns with the practical constraints of this thesis.
 
@@ -866,6 +958,12 @@ Each training/evaluation example is anchored at a **decision frame** (the last o
 - A **short temporal window** of preceding frames (used to encode motion and pre-contact context).
 
 This separation is important for Ego4D-LiteSTA because Track A is image-centric (decision-frame proposals), while Track B consumes both image and short-term temporal context.
+
+This thesis uses the Ego4D **canonical clips** distribution (rather than full-length canonical videos) because it is benchmark-aligned and makes training and evaluation more accessible. Ego4D provides two clip variants: `clips` (original resolution) and `clips_540ss`, where `540ss` indicates the shorter side is scaled to 540 pixels. Canonical clips are distributed at a constant frame rate of 30 FPS.
+
+To avoid timeline ambiguity, Ego4D annotation files distinguish clip-based and video-based time/frame references using `clip_` and `video_` prefixes, respectively. Ego4D-LiteSTA uses the clip-based fields when constructing decision-frame examples and temporal windows.
+
+For the Forecasting Hands and Objects (FHO) benchmark, clips correspond to approximately 5-minute intervals (with padding before/after the interval when available), which provides optional context near clip boundaries.
 
 ### 3.2.2 Ground-truth annotations available per interaction
 
@@ -1043,7 +1141,11 @@ Regardless of which options are enabled, every run produces a consistent set of 
 
 ## 4.1 Design Principles
 
+### 4.1.1 Rationale
+
 Ego4D‑LiteSTA is organized as a three‑track pipeline designed around two constraints: (i) STA requires both spatial localization and short‑term temporal context, and (ii) the system must be reproducible and efficient on modest hardware. The tracks are separated so that each component can be evaluated with a metric aligned to its role (Chapter 3) while still producing artifacts that compose cleanly.
+
+### 4.1.2 Principles
 
 The system follows five design principles:
 
@@ -1059,6 +1161,8 @@ The system follows five design principles:
 
 ## 4.2 Track A Overview (Proposals + Manifests)
 
+### 4.2.1 Stages and contract
+
 Track A transforms each decision frame into a compact candidate set of bounding boxes that is likely to contain the next‑active object. Conceptually, it answers the question: *“Which $K$ regions should the system consider?”*
 
 Track A operates in two stages:
@@ -1069,9 +1173,13 @@ Track A operates in two stages:
 
 The key output of Track A is not only the candidate set itself but also the **manifests** that make downstream training and evaluation deterministic. These manifests provide a stable interface between Track A and Track B/C: a decision frame identifier plus a list of candidates with any available labels.
 
+### 4.2.2 Outputs and downstream interface
+
 From a system perspective, Track A is the primary control for the **accuracy–efficiency trade‑off**: increasing $K$ tends to improve recall (benefiting Track B/C) but increases per‑frame computation downstream.
 
 ## 4.3 Track B Overview (Lightweight Fusion Head)
+
+### 4.3.1 Inputs and outputs
 
 Track B is the anticipation head that scores candidates produced by Track A and, when enabled, predicts semantics and TTC. It answers: *“Among the candidates, which region is next‑active, and what interaction is about to occur?”*
 
@@ -1089,11 +1197,17 @@ The design is intentionally lightweight. Rather than performing dense spatiotemp
 
 Track B is also the main locus for representational choices (how temporal context is encoded, how image and video features are fused, and how multi‑task heads are trained). These choices are detailed in Chapters 5–7; Chapter 4 emphasizes the system‑level contract: Track B is a scorer/predictor operating over Track A candidates and producing ranked outputs for evaluation.
 
+### 4.3.2 Candidate ranking under top-5
+
 ## 4.4 Track C Overview (Training-Free Pruning)
+
+### 4.4.1 Motivation and scope
 
 Track C studies efficiency improvements that do not require retraining, focusing on token‑level pruning applied at inference time. It answers: *“How much compute can be removed while keeping accuracy close to Track B?”*
 
 Track C reuses the same candidate interface and evaluation protocol as Track B. The difference is that Track C introduces a pruning policy into the feature extraction and fusion pathway, reducing the number of tokens processed for each decision frame and its temporal context.
+
+### 4.4.2 Evaluation focus (accuracy–latency)
 
 This track is separated for two reasons:
 
@@ -1110,7 +1224,7 @@ Overall, Track C turns efficiency into an explicit, measurable knob while preser
 
 Track A is designed to maximize the probability that the true next‑active object appears in a small candidate set. The core design choice is to optimize for **coverage** (recall) rather than class specificity: a candidate set that consistently includes the next‑active region enables downstream ranking and multi‑task prediction to operate efficiently.
 
-### Candidate generation (Stage A)
+### 5.1.1 Candidate generation (Stage A)
 
 Given the decision frame $I_t$, Stage A outputs a set of $K$ candidate boxes
 $$
@@ -1126,7 +1240,7 @@ Two proposal sources are used in this thesis:
 
 The primary knob is $K$. Larger $K$ increases recall but increases downstream computation approximately linearly, since Track B and Track C score candidates individually.
 
-### Proposal evaluation: Recall@K
+### 5.1.2 Proposal evaluation: Recall@K
 
 Stage A is evaluated by Recall@K (Chapter 3). Let $g_t$ be the selected target box for a decision frame (Section 3.4.5), and define
 $$
@@ -1139,7 +1253,7 @@ $$
 
 We use Recall@K as the stage selection criterion because Track A’s role is to preserve the true next‑active region in a small set; it is not penalized for including additional plausible regions.
 
-### Manifest construction and label attachment (Stage B)
+### 5.1.3 Manifest construction and label attachment (Stage B)
 
 Stage B transforms the proposal set into training/evaluation examples for the head by attaching candidate‑level supervision:
 
@@ -1155,7 +1269,7 @@ The key methodological outcome of Stage B is a manifest that fully specifies the
 
 Track B takes the candidate set from Track A and predicts, for each candidate, whether it corresponds to the next‑active object and (optionally) the associated noun, verb, and TTC. The design goal is to incorporate short‑term temporal cues while remaining lightweight and compatible with candidate ranking.
 
-### Inputs and representations
+### 5.2.1 Inputs and representations
 
 For each decision frame, Track B consumes:
 
@@ -1170,7 +1284,7 @@ The system encodes the visual context into two token sets:
 
 The exact backbone choices are treated as implementation details; methodologically, the requirement is that both modalities yield $d$‑dimensional token sequences with consistent normalization.
 
-### Frame‑Guided Temporal Pooling (FGTP)
+### 5.2.2 Frame‑Guided Temporal Pooling (FGTP)
 
 Video tokens often contain redundancy, especially in short egocentric windows with repeated background content. FGTP compresses temporal information into a compact representation guided by the decision frame. Concretely, FGTP computes an attention‑like aggregation of video tokens conditioned on image tokens:
 
@@ -1180,7 +1294,7 @@ $$
 
 where $\mathbf{Z}^{\mathrm{FGTP}}$ contains fewer effective tokens than $\mathbf{Z}$ while preserving motion cues most relevant to the decision frame.
 
-### Dual cross‑attention fusion
+### 5.2.3 Dual cross‑attention fusion
 
 After FGTP, Track B performs lightweight bidirectional fusion between the decision frame and the temporal context:
 
@@ -1189,7 +1303,7 @@ After FGTP, Track B performs lightweight bidirectional fusion between the decisi
 
 This dual interaction is crucial for STA because the next‑active object is localized on the decision frame but is often disambiguated by preceding motion (hand trajectory, object approach, and pre‑contact dynamics).
 
-### Candidate pooling and per‑candidate features
+### 5.2.4 Candidate pooling and per‑candidate features
 
 Each candidate box $b_{t,i}$ is converted into a per‑candidate feature vector $\mathbf{h}_{t,i}$ by pooling from the fused token maps. The pooling operation is designed to be lightweight and stable across varying $K$:
 
@@ -1199,7 +1313,7 @@ $$
 
 where $(\mathbf{X}', (\mathbf{Z}^{\mathrm{FGTP}})')$ are the fused representations. This produces one feature vector per candidate, enabling independent scoring and straightforward batching.
 
-### Prediction heads and scoring
+### 5.2.5 Prediction heads and scoring
 
 Track B outputs for each candidate:
 
@@ -1215,7 +1329,7 @@ where $\sigma$ is the sigmoid.
 
 When priors are enabled, the final ranking score is formed by combining the learned next‑active score with optional additive components (e.g., hotspot bias or CLIP‑based re‑ranking) while keeping the candidate interface unchanged.
 
-### Training objective
+### 5.2.6 Training objective
 
 Track B is trained with a multi‑task objective over candidates, with masking for missing labels:
 
@@ -1235,11 +1349,11 @@ At evaluation time, candidates are ranked per decision frame by the final score 
 
 Track C introduces inference‑time token pruning to reduce compute while preserving accuracy. The key methodological requirement is **training‑free control**: pruning is applied without changing learned weights, enabling a clean analysis of the accuracy–latency trade‑off.
 
-### Motivation
+### 5.3.1 Motivation
 
 Token‑based video models process a large number of tokens, many of which contribute little to the final prediction for a given decision frame. In STA, this redundancy is amplified by short horizons and repeated background. Pruning seeks to remove low‑utility tokens before expensive fusion and head computations.
 
-### Rollout‑guided importance
+### 5.3.2 Rollout‑guided importance
 
 RGTP assigns an importance score to tokens using attention rollout‑style propagation. Let $\alpha_j$ denote the importance of token $j$ after rollout aggregation across layers/heads. Tokens are then ranked by $\alpha_j$.
 
@@ -1253,7 +1367,7 @@ Here, $q_{1-r}(\alpha)$ denotes the $(1-r)$ quantile of the token‑importance s
 
 The pruning policy can be applied to video tokens, image tokens, or both, but the system is evaluated under a single fixed policy per run to keep comparisons fair.
 
-### Integration and evaluation
+### 5.3.3 Integration and evaluation
 
 Track C reuses Track B’s candidate scoring pipeline with the pruned token sets. Because the candidate set and manifests are unchanged, the evaluation remains identical: rank candidates per decision frame, evaluate the **top‑5** outputs, and report TTC error.
 
@@ -1264,55 +1378,731 @@ In addition to accuracy metrics, Track C reports runtime metrics (e.g., latency 
 
 ## 6.1 Local/Colab Workflow and Tooling
 
+Ego4D‑LiteSTA is implemented as a local-first workflow with optional cloud acceleration for the two most GPU‑intensive steps. The guiding goal is to keep the end‑to‑end pipeline runnable and debuggable on a single development machine, while still enabling occasional heavy training jobs when needed.
+
+In addition, the canonical clips used as the source data were downloaded via the official Ego4D CLI from a cloud notebook environment (Colab) due to the large transfer volume (approximately 95 GB). In this setup, the STA clip UID list (sta_clip_uids.txt) corresponds to 2,324 canonical clips.
+
+### 6.1.1 Local-first execution
+
+Most stages are executed locally because they benefit from fast iteration, direct access to cached artifacts, and stable path layouts:
+
+- **Data materialization and preprocessing.** Frame extraction, list building, and manifest generation are run locally to keep the dataset state inspectable and to avoid silent mismatches between “what was extracted” and “what was trained/evaluated”.
+
+- **Track A inference and Stage B preparation.** Proposal generation and candidate manifest construction are run locally because they are I/O‑bound and because they produce the manifests that define the training/evaluation interface of the entire system.
+
+- **Track B training and evaluation (default).** The fusion head training and evaluation loops are designed to run on a single GPU (or CPU in demo mode) with consistent logging of metrics and checkpoints.
+
+- **Track C pruning evaluation.** Pruning experiments are run locally to measure accuracy–efficiency trade‑offs in a controlled environment.
+
+### 6.1.2 Minimal cloud usage
+
+Cloud notebooks are used only when the required GPU time is impractical to schedule locally:
+
+- **YOLO fine‑tuning (Track A detector).** When detector weights are fine‑tuned, a cloud notebook can accelerate training, after which the resulting weights are brought back into the local workflow.
+
+- **VideoMAE pretraining (optional backbone).** When backbone pretraining is performed, it is similarly handled in a cloud notebook and the resulting weights are then treated as fixed inputs for local training/evaluation.
+
+All other steps, including the production of manifests, checkpoints, metric dumps, and prediction exports, remain local to preserve reproducibility and simplify debugging.
+
+### 6.1.3 Practical tooling choices
+
+The system uses:
+
+- A Python virtual environment for dependency isolation.
+- Scriptable entry points for each track and stage.
+- A standardized run directory structure per track (with run IDs/timestamps) to avoid overwriting results and to make comparisons straightforward.
+
+These choices are intentionally conservative: the objective is not to build a complex training platform, but to ensure that experiments can be repeated and audited reliably.
+
 ## 6.2 Configuration System and Reproducible Runs
 
+Reproducibility in Ego4D‑LiteSTA is enforced by treating configuration as a first‑class artifact and by making each run self‑describing.
+
+### 6.2.1 YAML configuration with inheritance and overrides
+
+The project uses a YAML‑based configuration system that centralizes all important toggles and hyperparameters. The main design features are:
+
+- **Config inheritance:** a shared base configuration defines common paths, runtime defaults, logging behavior, and seeds; track‑specific configurations extend it.
+
+- **Variable interpolation:** configuration values can reference one another (e.g., deriving versioned output roots) so that changing a single root does not require editing many files.
+
+- **Environment auto‑detection:** path roots and device selection can adapt between local and notebook environments without modifying code.
+
+- **Overrides:** any configuration field can be overridden for an experiment, enabling controlled ablations without editing source files.
+
+This approach avoids the failure mode where “small experimental toggles” are scattered across scripts and are difficult to reconstruct after the fact.
+
+### 6.2.2 Run logging as provenance
+
+Each Track A/B/C run produces a run log that captures:
+
+- The resolved configuration snapshot (including defaults and overrides).
+- Environment information (Python and library versions, device type, and basic system identifiers).
+- Source control identifiers (commit hash and dirty state when available).
+- Output artifacts produced by the run (e.g., checkpoints, metrics, prediction exports).
+
+In addition, Track B and Track C produce structured metric dumps suitable for tabulation and plotting, and Track B produces prediction exports suitable for error analysis.
+
+Together, these artifacts implement a simple but effective contract: *any result reported in the thesis must be traceable to a run log, a manifest defining the evaluated dataset, and a metric dump defining the reported numbers.*
+
 ## 6.3 Data Validation and Failure Handling
+
+Ego4D‑LiteSTA’s engineering emphasis is to prevent silent data errors. Because the pipeline is manifest‑driven, most failures manifest as inconsistencies between frames, boxes, and labels. This section summarizes the main validation checks and failure handling strategies used throughout the project.
+
+### 6.3.1 Validation checkpoints
+
+1) **Frame availability and resolution consistency.** Before training or evaluation, runs verify that decision‑frame images exist for all referenced identifiers and that the decoded resolution matches the coordinate convention used for boxes.
+
+2) **Manifest integrity.** Manifests are validated for:
+  - required keys per record (frame identifier, candidate box fields, `is_positive`),
+  - numeric ranges (box coordinates and TTC values), and
+  - record counts and candidate count distributions (to catch truncated candidate sets or misconfigured $K$).
+
+3) **Label alignment sanity checks.** Candidate alignment uses deterministic IoU logic (Section 3.4.5). Runs check for:
+  - the presence of at least one positive candidate for a reasonable fraction of frames when recall is high,
+  - unexpected class/value outliers (e.g., TTC values outside the expected horizon), and
+  - missing semantic labels when multi‑task learning is enabled.
+
+4) **Evaluation consistency.** Metrics are computed from prediction exports that preserve per‑candidate provenance (frame key, candidate box, predicted score/labels, and ground truth fields). This makes it possible to debug metric regressions by tracing back to individual candidates.
+
+### 6.3.2 Failure handling strategy
+
+Failures are handled with a bias toward early termination and explicit reporting:
+
+- **Fail fast on missing inputs.** If frames, manifests, or weights are missing, runs stop with a clear error message rather than silently skipping samples.
+
+- **Demo/smoke modes for rapid diagnosis.** Each track supports quick checks that run a small number of samples or iterations to confirm that the pipeline is wired correctly before expensive training.
+
+- **Non‑destructive outputs.** Runs write results to a new run directory, preserving previous outputs and enabling direct comparisons across timestamps.
+
+- **Structured error reporting.** When a run fails after producing partial outputs, the error context is recorded alongside the run directory so that failures are reproducible and debuggable.
+
+These practices are intentionally simple; their value is that they keep the pipeline robust under iterative experimentation and reduce the risk that reported results are caused by accidental data mismatches.
 
 
 # Chapter 7: Experimental Setup
 
 ## 7.1 Baselines and Compared Variants
 
+This section defines the experimental comparisons used throughout Chapters 8–9. Because Ego4D‑LiteSTA is modular, comparisons are organized by which track is being varied while keeping the others fixed.
+
+### 7.1.1 Track A baselines (proposal generation)
+
+Track A comparisons evaluate proposal quality under Recall@K on the decision frame.
+
+- **Oracle proposals (upper bound).** Candidates are derived directly from ground-truth boxes. This isolates downstream ranking/semantics performance by removing proposal errors.
+
+- **Lightweight detector proposals.** A compact detector produces $K$ candidates per decision frame. This is the deployable baseline used in the end-to-end system.
+
+Unless otherwise stated, Track A uses the same post-processing style (confidence filtering and NMS) and the same IoU threshold for recall computation as used for candidate supervision alignment.
+
+### 7.1.2 Track B baselines (candidate scoring and multi-task prediction)
+
+Track B comparisons evaluate the quality of candidate ranking and the optional multi-task predictions.
+
+- **Next-active scoring only.** The head predicts a binary next-active score per candidate and ranks candidates accordingly.
+
+- **Multi-task head (noun/verb/TTC).** The head jointly predicts next-active score and semantic/TTC outputs. Multi-task losses are masked when labels are not available.
+
+- **With optional priors (ablations).** When enabled, hotspot priors and/or CLIP-based re-ranking provide additive score components on top of the learned next-active score. These are treated as optional variants rather than core dependencies.
+
+To ensure comparability, Track B always consumes the same manifest-defined candidate sets produced by Track A Stage B; differences come from model architecture, training settings, and optional priors.
+
+### 7.1.3 Track C baselines (efficiency knobs)
+
+Track C comparisons evaluate the impact of inference-time pruning.
+
+- **No pruning (Track B reference).** Track C disabled; serves as the accuracy reference point.
+
+- **RGTP pruning at fixed rates.** Pruning is enabled with a requested pruning rate $r$ while keeping all learned weights fixed.
+
+Track C is evaluated with the same correctness metrics as Track B (top‑5 mAP variants and TTC error), plus runtime measurements to support accuracy–latency comparisons.
+
 ## 7.2 Training Protocols and Hyperparameters
 
+All training and evaluation are driven by explicit manifests and configuration snapshots (Chapter 6). The goal of the protocol is to keep comparisons fair: when one component is changed, the dataset interface, evaluation protocol, and reporting remain fixed.
+
+### 7.2.1 Data sources and splits
+
+- **Training/validation split.** Experiments follow the official Ego4D‑STA v2 split where supervision is available. Track B trains on the training manifests and evaluates on the validation manifests.
+
+- **Manifest-defined datasets.** Track B and Track C do not read raw annotations directly during training; instead they read Stage B outputs that define the candidate set and attached labels. This prevents accidental drift between data preparation and model training.
+
+### 7.2.2 Optimization settings
+
+Track B is trained with a standard supervised objective over candidates:
+
+- **Optimizer and schedule.** A modern SGD-family or adaptive optimizer is used with a fixed learning-rate schedule across ablations, so that improvements can be attributed to architecture/inputs rather than optimizer changes.
+
+- **Batching.** Batches are formed over candidates while preserving decision-frame identifiers for evaluation. Candidate counts per decision frame may vary; batching is implemented to handle variable candidate counts without padding to dense grids.
+
+- **Regularization.** Dropout and label smoothing (when applicable) are kept fixed across comparisons unless explicitly ablated.
+
+- **Mixed precision.** Mixed precision can be enabled for speed/VRAM efficiency; when used, it is recorded in the run log to keep results reproducible.
+
+### 7.2.3 Multi-task settings
+
+When multi-task learning is enabled, the loss is a weighted sum of next-active classification and auxiliary losses (noun, verb, and TTC). The weight values and TTC mode (regression vs bins) are treated as hyperparameters and are kept constant for baseline comparisons; Chapter 9 reports ablations where these choices are varied.
+
+### 7.2.4 Checkpointing and model selection
+
+Track B writes epoch checkpoints and tracks a “best” checkpoint using a validation criterion aligned with the benchmark metrics. Early stopping can be enabled to prevent overfitting; when enabled, patience and monitored metric are recorded.
+
+Track C does not retrain. It always evaluates a fixed Track B checkpoint under different pruning settings.
+
 ## 7.3 Evaluation Protocol
+
+This thesis evaluates Ego4D‑LiteSTA in a way that matches the benchmark semantics while making the proposal-driven structure explicit.
+
+### 7.3.1 Track A evaluation
+
+Track A is evaluated by Recall@K (Section 3.3.1) on the decision frame. For each decision frame, the top $K$ proposals are compared to the selected target box using IoU thresholding. Recall@K is reported as the primary proposal-quality metric.
+
+### 7.3.2 Track B/C correctness evaluation
+
+Track B and Track C are evaluated under the benchmark-style **top‑5** protocol (Section 3.3.2):
+
+1) For each decision frame, compute a final score for every candidate.
+2) Rank candidates by score and select the top 5.
+3) Evaluate these top‑5 predictions using the benchmark matching rules and report:
+  - N mAP (top‑5)
+  - N+V mAP (top‑5)
+  - N+δ mAP (top‑5) (TTC discretized)
+  - Overall mAP (top‑5)
+  - TTC MAE (seconds)
+
+All metrics are computed on the same validation manifests to ensure that changes in Track B/C are not confounded by changes in candidate generation.
+
+### 7.3.3 Track C efficiency evaluation
+
+Track C adds runtime-oriented reporting on top of the Track B/C correctness metrics. For each pruning setting, the evaluation reports:
+
+- The requested pruning rate and the mean achieved fraction of pruned tokens.
+- Latency statistics (e.g., percentile latencies) and throughput under a consistent measurement setup.
+- Optional memory/compute proxies (VRAM usage and FLOPs estimates) when instrumentation is enabled.
+
+This produces an accuracy–latency trade-off curve where the no-pruning setting serves as the reference point.
+
+### 7.3.4 Reproducibility and traceability
+
+Every reported result is backed by:
+
+- The manifest defining evaluated candidates and labels,
+- A run log capturing the resolved configuration and environment,
+- A metric dump containing the reported scalar values,
+- Optional prediction exports enabling per-candidate error analysis.
 
 
 # Chapter 8: Results
 
+This chapter reports the empirical results of Ego4D‑LiteSTA on the validation split under the evaluation protocol defined in Chapter 3 and the experimental setup in Chapter 7. Results are organized by track: Track A quantifies proposal quality via Recall@K; Track B reports benchmark‑style correctness under the top‑5 protocol; and Track C characterizes the accuracy–latency trade‑off of training‑free pruning.
+
 ## 8.1 Track A Results (Recall@K)
+
+Track A is evaluated as a proposal mechanism on the decision frame. Because the downstream head can only score candidates that are proposed, the central question is whether the candidate set contains a sufficiently good match to the next‑active object.
+
+Unless otherwise stated, the reported Recall@K values follow the proposal “hit” definition in Chapter 3: a decision frame is counted as a hit if at least one candidate achieves an IoU above the fixed threshold with the selected target box.
+
+### 8.1.1 Reported metrics
+
+Table 8.1 summarizes a $K$ sweep for proposal recall and the fraction of candidates labeled positive after Stage‑B alignment.
+
+| K | Recall@K (micro) | Recall@K (macro) | Positive ratio (micro) | Positive ratio (macro) |
+|---:|---:|---:|---:|---:|
+| 4  | 0.670 | 0.672 | 0.319 | 0.370 |
+| 6  | 0.672 | 0.674 | 0.313 | 0.368 |
+| 8  | 0.672 | 0.674 | 0.312 | 0.368 |
+| 10 | 0.672 | 0.674 | 0.312 | 0.368 |
+| 12 | 0.672 | 0.674 | 0.312 | 0.368 |
+| 15 | 0.672 | 0.674 | 0.312 | 0.368 |
+
+In addition to the $K$ sweep, a full Track‑A run with $K=6$ reported a per‑frame hit‑rate style Recall@K of 0.678 and a mean best‑IoU of 0.617 on the materialized evaluation set.
+
+### 8.1.2 Key observations
+
+Three observations follow from Table 8.1 and the per‑run summary statistics:
+
+1) **Recall saturates quickly with $K$.** Recall improves from $K=4$ to $K=6$ and then largely plateaus for larger $K$. This supports using small candidate sets without losing proposal coverage.
+
+2) **Candidate sets are often effectively smaller than $K$.** In practice, post‑processing and confidence thresholding yield fewer than $K$ retained boxes on many frames (e.g., an average of roughly two proposals per decision frame in the evaluated run), which further emphasizes the importance of recall‑oriented proposal tuning rather than simply increasing $K$.
+
+3) **Proposal quality aligns with downstream feasibility.** A mean best‑IoU above 0.6 indicates that when a hit occurs, candidates often overlap the target with a margin that is sufficient for downstream ROI pooling and ranking. This is important because Track B/C operate on candidate geometry and can be sensitive to poorly localized proposals.
+
+Finally, it is worth noting that the canonical clip UID list contains 2,324 clip identifiers, while the evaluated Track‑A runs processed 2,323 decision frames. This discrepancy is consistent with the practical reality that a small number of clips may be missing a usable decision‑frame extraction or be filtered by validation checks; throughout this thesis, metrics are reported on the actual materialized and validated evaluation set.
 
 ## 8.2 Track B Results (N / N+V / N+δ, TTC)
 
+Track B is evaluated as a candidate scoring and multi‑task prediction model operating on Track‑A candidate sets. Results are reported under the benchmark‑style top‑5 protocol: for each decision frame, candidates are ranked by the final score and only the top 5 are evaluated for localization and (when enabled) semantic/TTC outputs.
+
+Unless otherwise stated, Track B uses a lightweight fusion head with multi‑task supervision enabled (noun, verb, and TTC) and a regression TTC head. The reported results correspond to the best checkpoint selected by validation mAP within the run.
+
+### 8.2.1 Top-5 mAP variants
+
+Table 8.2 reports the top‑5 mAP metrics (in %) for the best Track‑B checkpoint evaluated on the validation manifests.
+
+| Metric (top‑5) | Value (%) |
+|---|---:|
+| N mAP (top‑5) | 7.45 |
+| N+V mAP (top‑5) | 8.74 |
+| N+δ mAP (top‑5) | 7.14 |
+| Overall mAP (top‑5) | 9.82 |
+
+For context, the same evaluation also produced aggregate candidate‑level summaries: mAP 31.19% and a next‑active classification accuracy of 68.81%. These aggregate values help interpret top‑5 results: they indicate that the model is often able to separate positives from negatives at the candidate level, while the benchmark metrics further require correct ranking among the top few candidates and correct semantic/TTC outputs.
+
+### 8.2.2 TTC results
+
+For the same Track‑B checkpoint, the TTC mean absolute error was 0.200 seconds.
+
+Two qualitative interpretations are useful:
+
+1) **TTC is learned from short‑horizon egocentric cues.** Given the short anticipation window and the variability of wearer motion, TTC prediction benefits from temporal context but remains sensitive to candidate selection and ROI quality.
+
+2) **Top‑5 semantics and TTC are bottlenecks.** Improvements in noun/verb and TTC heads do not automatically follow from better next‑active scoring; they depend on both representation quality and the long‑tailed distribution of classes. This motivates the ablations in Chapter 9.
+
 ## 8.3 Track C Results (Accuracy–Latency Pareto)
+
+Track C evaluates rollout‑guided token pruning as a training‑free efficiency knob applied at inference time. The key methodological constraint is that pruning is applied without retraining the Track‑B weights; therefore, any accuracy changes can be attributed to reduced token computation rather than representation learning.
+
+### 8.3.1 Accuracy retained under pruning
+
+Table 8.3 summarizes correctness metrics for a fixed Track‑B checkpoint evaluated under different pruning settings. The pruning “rate” denotes the requested pruning level; the achieved fraction pruned can be lower due to the rollout‑guided selection and safety constraints. Top‑5 mAP values are reported in %.
+
+| Setting | Achieved fraction pruned | Overall mAP (top‑5) (%) | TTC MAE (s) |
+|---|---:|---:|---:|
+| No pruning | 0.000 | 2.44 | 0.189 |
+| RGTP (rate 0.30) | 0.102 | 1.33 | 0.193 |
+| RGTP (rate 0.50) | 0.120 | 1.26 | 0.193 |
+
+In this reference run, pruning reduced top‑5 overall mAP while keeping TTC MAE within a narrow band. This illustrates the central trade‑off in Track C: pruning can reduce compute, but aggressive pruning (or pruning that removes informative tokens) can harm the fine‑grained ranking and matching required by top‑5 metrics.
+
+### 8.3.2 Runtime and Pareto analysis
+
+Track C also reports runtime measurements collected under a consistent measurement setup. Table 8.4 summarizes mean latency and throughput for the same pruning settings as Table 8.3.
+
+| Setting | Latency mean (ms) | Latency p95 (ms) | Throughput (samples/s) |
+|---|---:|---:|---:|
+| No pruning | 13.54 | 18.47 | 73.87 |
+| RGTP (rate 0.30) | 12.16 | 14.61 | 82.21 |
+| RGTP (rate 0.50) | 11.88 | 13.78 | 84.19 |
+
+Two conclusions follow:
+
+1) **Measured speedups track achieved pruning.** Even though the requested pruning rates were 0.30 and 0.50, the achieved token fraction pruned in these runs was approximately 10–12%. The observed latency reduction (from 13.54 ms mean to 11.88 ms mean) and throughput increase (from 73.87 to 84.19 samples/s) are consistent with a moderate compute reduction rather than an extreme pruning regime.
+
+2) **Pareto behavior is explicit and measurable.** Track C exposes a knob that moves the system along an accuracy–latency curve without retraining. This makes it possible to decide, for a given deployment budget, whether a modest latency improvement is worth the corresponding drop in top‑5 correctness.
+
+## 8.4 Comparison with Prior Work (Top-5 metrics)
+
+This section compares Ego4D‑LiteSTA against representative published baselines on Ego4D‑STA v2 validation using the same Top‑5 metric family (Chapter 3).
+
+### 8.4.1 Reported literature baselines
+
+Table 8.5 restates the literature reference points from Chapter 2 for convenience.
+
+| Method (reported) | N | N+V | N+δ | All |
+|---|---:|---:|---:|---:|
+| FRCNN+SF | 21.00 | 7.45 | 7.07 | 2.98 |
+| StillFast | 20.26 | 10.37 | 7.26 | 3.96 |
+| GANO v2 | 20.52 | 10.42 | 7.28 | 3.99 |
+| STAformer | 24.85 | 13.45 | 7.41 | 4.90 |
+| STAformer + MH + AFF | 29.39 | 15.38 | 9.94 | 5.67 |
+
+### 8.4.2 Ego4D-LiteSTA vs reported baselines
+
+Table 8.6 inserts the best Ego4D‑LiteSTA Track‑B result from this thesis into the same metric format (Top‑5 mAP, %).
+
+| Method | N | N+V | N+δ | All |
+|---|---:|---:|---:|---:|
+| Ego4D‑LiteSTA (Track B, this thesis) | 7.45 | 8.74 | 7.14 | 9.82 |
+
+These results highlight the central positioning of Ego4D‑LiteSTA: the thesis prioritizes a modular, reproducible pipeline and explicit efficiency knobs. Chapter 9 analyzes which design decisions (candidate generation, fusion depth, TTC mode, and optional priors) most strongly impact the gap to heavier baselines.
 
 
 # Chapter 9: Ablations and Analysis
 
 ## 9.1 Proposal K Sweeps
 
+### 9.1.1 Setup
+
+This ablation studies the effect of proposal count $K$ on downstream behavior. In Ego4D‑LiteSTA, $K$ controls both proposal coverage (Track A Recall@K) and the head’s class imbalance (positive ratio vs negatives). We sweep $K$ and report Recall@K and positive ratios (Chapter 8).
+
+For context, Table 9.1 reproduces a candidate‑count ablation reported in SOIA‑DOD on Ego4D validation, which studies how changing the number of object candidates affects the same Top‑5 metric family.
+
+| # Candidates | N | N+V | N+TTC | Overall |
+|---:|---:|---:|---:|---:|
+| 5 | 30.14 | 14.54 | 9.219 | 4.91 |
+| 10 | 30.65 | 15.22 | 9.222 | 4.98 |
+| 20 | 30.94 | 14.88 | 8.86 | 4.87 |
+
+### 9.1.2 Findings
+
+Two high‑level conclusions are consistent across the SOIA‑DOD ablation and the Track‑A behavior observed in this thesis:
+
+1) **A moderate $K$ is often sufficient.** SOIA‑DOD peaks around 10 candidates on Overall, and our Track‑A recall saturates early with $K\approx 6$ in the evaluated regime. This supports keeping candidate sets small.
+
+2) **More candidates can introduce noise.** Increasing $K$ increases negatives and can lower the effective signal‑to‑noise ratio for the head. This is reflected in the positive ratio dynamics in our manifests (Chapter 8) and in SOIA‑DOD’s degradation when moving from 10 to 20 candidates on Overall.
+
 ## 9.2 Fusion Depth and Token Dimensionality
+
+### 9.2.1 Setup
+
+This ablation analyzes the capacity of the Track‑B fusion module, focusing on two practical knobs:
+
+- **Fusion depth** (the number of stacked fusion blocks).
+- **Token dimensionality** (the dimension of the projected per‑candidate token that is fed into fusion).
+
+Because Track‑B is designed to be lightweight and to run on modest compute, this thesis does not present a full grid search over depth and dimensionality. Instead, it reports a constrained comparison between two representative checkpoints that differ in projected token dimensionality (768 vs 512) while keeping the candidate limit fixed at 16.
+
+Table 9.2 reports Top‑5 mAP metrics in percent and TTC MAE in seconds.
+
+### 9.2.2 Findings
+
+The constrained comparison suggests a clear capacity–performance trade‑off:
+
+1) **Reducing token dimensionality can change which subtask dominates.** In the 512‑dimensional variant, N and N+δ are competitive, but the joint “All” metric is substantially lower. This is consistent with the “All” metric being sensitive to how well noun, verb, and TTC signals are simultaneously represented.
+
+2) **The highest “All” result in this thesis uses the larger token projection.** While this is not a controlled sweep (other training factors may differ between checkpoints), it supports the engineering choice of keeping the token dimensionality at 768 for the main results reported in Chapter 8.
+
+| Variant (representative) | Projected token dim | N | N+V | N+δ | All | TTC MAE (s) |
+|---|---:|---:|---:|---:|---:|---:|
+| Track‑B best (mainline) | 768 | 7.45 | 8.74 | 7.14 | 9.82 | 0.200 |
+| Compact token projection | 512 | 13.62 | 3.40 | 12.17 | 3.04 | 0.200 |
 
 ## 9.3 TTC Modeling (Regression vs Bins)
 
+### 9.3.1 Setup
+
+Ego4D‑STA requires predicting time‑to‑contact (TTC) in addition to noun and verb. Two common modeling strategies are:
+
+- **Direct regression**, predicting TTC as a continuous value (optionally with normalization).
+- **Discretized bins**, predicting a categorical distribution over TTC bins and converting to seconds.
+
+In the set of Track‑B runs evaluated and logged in this thesis, TTC is modeled using **normalized regression** (the training configuration for the best checkpoint explicitly sets TTC bins off). Therefore, the “Regression vs bins” comparison is framed here as an analysis of the chosen regression formulation, rather than as a head‑to‑head sweep.
+
+Table 9.3 summarizes TTC MAE alongside Top‑5 “All” for representative runs.
+
+### 9.3.2 Findings
+
+Three observations follow:
+
+1) **The mainline TTC regression is stable across strong checkpoints.** For the best Track‑B run and several nearby variants, TTC MAE is consistently around 0.19–0.20 seconds.
+
+2) **TTC error can degrade sharply for legacy or mismatched checkpoints.** A representative evaluation of an older checkpoint shows substantially higher TTC MAE, even when Top‑5 mAP metrics remain non‑trivial. This highlights the importance of consistent TTC normalization and of treating TTC as a first‑class output during training.
+
+3) **Improving “All” is not solely a TTC problem.** The “All” Top‑5 metric couples noun, verb, and TTC. In this thesis, the largest gains in “All” correlate with improvements in cross‑task alignment (N+V and N+δ) rather than with a dramatic change in TTC MAE.
+
+| Run (representative) | TTC bins used | All (Top‑5 mAP, %) | TTC MAE (s) |
+|---|---:|---:|---:|
+| Track‑B best (mainline) | No | 9.82 | 0.200 |
+| Prior‑sweep baseline (same checkpoint family) | (not logged) | 3.05 | 0.190 |
+| Legacy checkpoint (older) | (not logged) | 8.66 | 0.413 |
+
 ## 9.4 Priors (Hotspots, CLIP) and Their Impact
+
+### 9.4.1 Setup
+
+This ablation evaluates optional **inference‑time priors** that reweight candidates before producing the final Top‑5 outputs:
+
+- **Hotspots**: a spatial prior that favors candidates in frequent interaction regions.
+- **CLIP prior**: a semantic prior that scores candidate regions using vision–language similarity.
+
+Crucially, these priors are applied **without retraining**. The evaluation uses the same Track‑B checkpoint and validation manifest, and reports the impact of enabling priors on Top‑5 mAP metrics.
+
+Table 9.4 reports results in percent.
+
+### 9.4.2 Findings
+
+For this checkpoint and validation set, priors do not improve the overall Top‑5 “All” metric:
+
+1) **Hotspots slightly decreases “All” and the component Top‑5 mAPs.** This suggests that the heuristic spatial bias can suppress true positives that fall outside typical regions, especially when the candidate proposals are already reasonably filtered.
+
+2) **Adding CLIP on top of hotspots partially recovers performance but does not surpass the no‑prior baseline.** The CLIP prior appears to compensate for some hotspot misrankings, but the net effect remains small.
+
+3) **TTC MAE remains unchanged, as expected.** Priors affect candidate ranking and selection; they do not directly improve temporal calibration.
+
+| Prior setting (same checkpoint) | N | N+V | N+δ | All | TTC MAE (s) |
+|---|---:|---:|---:|---:|---:|
+| None | 13.69 | 3.46 | 11.81 | 3.05 | 0.190 |
+| Hotspots | 12.05 | 3.20 | 10.18 | 2.92 | 0.190 |
+| Hotspots + CLIP | 12.86 | 3.26 | 11.03 | 2.99 | 0.190 |
 
 
 # Chapter 10: Discussion, Limitations, and Future Work
 
+## 10.1 Discussion
+
+### 10.1.1 What worked well
+
+Three design choices consistently improved the clarity and usefulness of the thesis outcomes.
+
+First, **a manifest‑centric workflow** (Track A → Track B/C) made the entire system inspectable. By grounding every stage in explicit candidate lists and labels, it became possible to attribute changes in results to concrete properties such as proposal coverage, candidate imbalance, and re‑ranking behavior, rather than to opaque training effects.
+
+Second, **small candidate sets were a pragmatic sweet spot.** The Track‑A sweep shows that recall saturates quickly in the explored regime, while larger candidate sets increase negatives and reduce the effective signal‑to‑noise ratio for the head. This supports a “small‑K by default” strategy for lightweight systems, especially when compute budgets are tight.
+
+Third, **Track C successfully exposes an efficiency knob without retraining.** Even with modest achieved pruning fractions in the presented runs, the measured accuracy–latency trade‑off is explicit and repeatable. This is valuable in practice: it enables deployment‑specific operating points rather than a single fixed model.
+
+Finally, the results highlight an important methodological point: the “All” metric is not simply an average of independent subproblems. Improvements that primarily strengthen cross‑task alignment (N+V and N+δ) can increase “All” more than minor reductions in TTC error alone.
+
+### 10.1.2 Interactions between tracks
+
+The Track A/B/C decomposition is not only an engineering convenience; it also reveals causal interactions.
+
+**Track A influences Track B in two ways:** (i) through proposal coverage (upper‑bounding head performance), and (ii) through candidate composition (changing the ratio of positives to negatives). In practice, the second effect can be as important as the first: a head trained and evaluated on extremely imbalanced candidate sets can become dominated by easy negatives, weakening the ranking of the few correct candidates.
+
+**Track B defines the “quality surface” that Track C can trade against efficiency.** Track C does not introduce new information; it redistributes attention and selectively prunes tokens during inference. As a result, Track C’s best‑case accuracy is limited by the quality of the Track‑B scoring function, and its efficiency gains depend on the redundancy present in the token set produced by Track A.
+
+**Optional priors interact with proposal noise.** The priors evaluated in Chapter 9 behave like re‑ranking heuristics. When proposals are already moderately clean, priors can reduce performance by over‑committing to a biased subset of candidates. Conversely, priors are more likely to help when proposal sets are large and noisy; this points to a conditional strategy where priors are enabled only in regimes where Track‑A proposal quality is known to be weak.
+
+## 10.2 Limitations
+
+### 10.2.1 Data and annotations
+
+Several limitations are intrinsic to Ego4D‑STA v2 and to the way lightweight pipelines must consume the dataset.
+
+**Annotation uncertainty and label ambiguity** are unavoidable. Noun and verb categories can be visually confusable, and the “decision‑frame” formulation compresses an extended interaction into a single label at a single time point. This can penalize models that predict a plausible action slightly early or slightly late.
+
+**Class imbalance is severe**, especially for joint labels (noun–verb–TTC). Lightweight training regimes are particularly sensitive to imbalance because they cannot rely on massive capacity to memorize rare combinations; this can depress the joint “All” score even when noun‑only performance is reasonable.
+
+**Domain and recording variability** (camera motion, occlusion, household diversity) limits how far hand‑crafted priors generalize. The priors tested in Chapter 9 likely underperform partly because they encode assumptions that do not hold uniformly across activities and environments.
+
+### 10.2.2 Modeling and efficiency
+
+The thesis intentionally prioritizes a reproducible, modular baseline over exhaustive architecture search. This yields several modeling limitations.
+
+**Ablation coverage is incomplete.** Chapter 9 includes constrained comparisons (e.g., token dimensionality and priors) rather than a full factorial sweep across fusion depth, projection size, candidate limit, and training schedule. Therefore, some observed differences should be interpreted as indicative rather than definitive causal effects.
+
+**Efficiency results are hardware‑ and implementation‑dependent.** Measured latency and throughput reflect a specific inference stack and runtime environment. While relative trends are meaningful (e.g., pruning increases throughput), absolute numbers may not transfer directly to different GPUs/CPUs, batch sizes, or deployment frameworks.
+
+**Training‑free pruning is bounded by representational redundancy.** Track C can only remove tokens that the fused representation can afford to ignore. When the model already operates near its capacity limit, aggressive pruning may collapse performance rather than improving a true Pareto frontier.
+
+## 10.3 Future Work
+
+### 10.3.1 Method extensions
+
+The results motivate several method‑level extensions that preserve the lightweight ethos while targeting the main bottlenecks.
+
+**Proposal quality improvements without heavy retraining.** More stable object proposals (or better temporal linking of proposals) would increase downstream recall and reduce negative noise. This includes revisiting thresholds, proposal aggregation across a short temporal window, and principled non‑maximum suppression choices tailored to hand–object interactions.
+
+**Better cross‑task coupling.** The joint “All” metric rewards models that align noun, verb, and TTC predictions coherently. Lightweight approaches could incorporate structured coupling (e.g., factorized scoring with calibrated compatibility terms) rather than treating the three heads as loosely related outputs.
+
+**TTC uncertainty and calibration.** Instead of predicting a point estimate only, future work could output calibrated uncertainty (e.g., a distributional TTC regression) and evaluate whether improved calibration translates into better decision‑frame rankings.
+
+**Adaptive priors.** Priors should not be globally “on” or “off”. A more promising direction is a confidence‑aware prior that activates only under high proposal noise or low head confidence, reducing the risk of harming already‑good rankings.
+
+### 10.3.2 Engineering extensions
+
+From an engineering standpoint, Ego4D‑LiteSTA can be made more useful as a research and benchmarking tool.
+
+**Experiment tracking and comparability.** Standardizing run metadata (config hashes, dataset identifiers, and evaluator versions) would make ablations easier to compare across time and across machines, reducing the possibility of “silent” changes.
+
+**Faster evaluation loops.** Caching intermediate representations and supporting incremental evaluation (only re‑scoring modified components) would reduce iteration cost, which is especially important when exploring proposal sweeps or pruning rates.
+
+**Packaging and portability.** A clean, minimal install path and deterministic environment capture would lower the barrier for others to reproduce the pipeline end‑to‑end, including on limited compute.
+
+**Deployment‑oriented inference.** Integrating the Track‑C pruning knob into a runtime policy (selecting pruning strength based on a latency budget) would turn Track C from an analysis tool into a practical controller for real‑time constraints.
+
 
 # Chapter 11: Reproducibility Checklist
+
+## 11.1 Data and manifests
+
+This thesis is organized around a manifest‑centric data flow. To reproduce the core results:
+
+1) **Use the Ego4D‑STA v2 canonical clips** and the corresponding official annotations for Short‑Term Anticipation.
+
+2) **Construct decision‑frame candidate manifests** (Track A, Stage B) so that each training and validation sample is a JSON line containing: clip identifier, decision timestamp, candidate list, and aligned noun/verb/TTC labels.
+
+3) **Keep train/val/test boundaries fixed.** The same clip split and evaluation protocol must be used across Track B and Track C to ensure the Top‑5 metrics are comparable.
+
+4) **Record candidate limits explicitly.** All Track‑B results reported in this thesis use a fixed per‑sample candidate limit at the head input. Any change to this value changes the difficulty of the ranking problem and must be treated as a new experimental condition.
+
+## 11.2 Training and checkpoints
+
+To reproduce training and checkpoint selection:
+
+1) **Fix initialization and optimization settings** (learning rate, batch size, label smoothing, warmup, early stopping patience) for a given run family.
+
+2) **Log the exact checkpoint used for evaluation.** This thesis reports results using explicitly saved best checkpoints (selected by a monitored validation metric).
+
+3) **Separate training from evaluation artifacts.** The evaluation must reference the checkpoint path, the validation manifest used, and the metric configuration (Top‑5 protocol).
+
+4) **Document the video backbone and token source.** Track‑B depends on precomputed video tokens; reproducing results requires using the same backbone family and token extraction procedure.
+
+## 11.3 Evaluation and reporting
+
+To reproduce the reported tables and comparisons:
+
+1) **Use a single evaluator implementation** for all Track‑B and Track‑C comparisons. Mixing evaluators can change the definition of “All” and break comparability.
+
+2) **Report Top‑5 metrics consistently.** This thesis expresses Top‑5 mAP metrics in percent in the Results and Ablations chapters. When using raw decimal outputs, convert with $100\times$ before inserting into tables.
+
+3) **Preserve run summaries.** Each run should emit a machine‑readable summary (JSON) containing: timestamp, checkpoint, manifest reference, and the metrics used in the thesis tables.
+
+4) **Separate accuracy and efficiency reporting.** Track C requires reporting both task metrics and runtime metrics (latency/throughput) measured under a clearly stated batching and device setting.
+
+## 11.4 Environment and determinism
+
+Reproducibility depends on controlling both software and measurement.
+
+1) **Pin key dependencies** (deep learning framework, CUDA/cuDNN, and vision libraries). Even minor version changes can affect numerical behavior and throughput.
+
+2) **Set random seeds** for training runs and document whether AMP/mixed precision is enabled.
+
+3) **Separate deterministic accuracy from performance benchmarking.** Throughput and latency can vary with background system load; benchmarking should be repeated and summarized with mean values.
+
+4) **Keep hardware notes.** Record GPU/CPU model and memory. Absolute timing comparisons should not be interpreted as hardware‑independent.
 
 
 # Chapter 12: Ethical, Legal, and Social Implications (ELSI)
 
+## 12.1 Data governance and privacy
+
+Ego4D is an egocentric dataset that can contain sensitive information about the recorder and bystanders, including faces, homes, and daily routines. Work on this dataset must therefore emphasize privacy‑aware practices.
+
+This thesis uses the dataset under its official access terms and relies on the canonical clip set and provided annotations. No attempt is made to identify individuals, infer private attributes, or link clips to real‑world identities. Any derivative artifacts produced by the pipeline (candidate manifests, intermediate features, predictions) should be treated as sensitive: even when anonymized, they may encode contextual information about environments or behaviors.
+
+When sharing results, it is safer to share aggregated metrics and ablations rather than raw frames or clips. If qualitative examples are needed, they should follow dataset governance rules and avoid exposing personally identifying or sensitive content.
+
+## 12.2 Bias, fairness, and representativeness
+
+Ego4D reflects the behaviors, environments, and object distributions of its contributors. As a result, a model trained on Ego4D‑STA may learn biases tied to geography, household type, cultural practices, and recording context.
+
+In a system like Ego4D‑LiteSTA, bias can appear in multiple ways:
+
+- **Label bias:** certain nouns/verbs may be under‑represented, leading to uneven performance across classes.
+- **Context bias:** priors or heuristics (e.g., spatial “hotspots”) may encode assumptions that do not generalize and can systematically disadvantage atypical interactions.
+- **Evaluation bias:** aggregate scores can hide poor performance on rare classes.
+
+This thesis reports per‑noun statistics in run artifacts and emphasizes transparent, manifest‑based evaluation. Future work should expand analysis beyond aggregate Top‑5 metrics to include stratified reporting and checks for failure modes in under‑represented categories.
+
+## 12.3 Responsible release and deployment
+
+The techniques explored here are intended for research and benchmarking, but they could be adapted to real‑world anticipation systems. Anticipation can be dual‑use: it may support assistive applications, but also enable surveillance or profiling.
+
+Responsible deployment should consider:
+
+1) **User consent and transparency.** Any system operating on egocentric video should be explicit about what is inferred and why.
+
+2) **On‑device and privacy‑preserving options.** Lightweight methods are well‑positioned for on‑device inference, which can reduce data exposure compared to cloud processing.
+
+3) **Safe failure behavior.** Anticipation is uncertain; downstream applications should treat predictions as probabilistic signals rather than as authoritative decisions.
+
+4) **Governed sharing of artifacts.** Releasing checkpoints, manifests, or predicted outputs should follow dataset terms and should avoid sharing content that could re‑identify participants or expose private contexts.
+
 
 # Chapter 13: Conclusion
+
+## 13.1 Summary of contributions
+
+This thesis contributes a lightweight, modular approach to Ego4D Short‑Term Anticipation with an emphasis on reproducibility and explicit design trade‑offs:
+
+1) **A Track A/B/C decomposition** that cleanly separates candidate generation and manifest construction (Track A), multi‑task scoring and ranking (Track B), and training‑free efficiency control through pruning (Track C).
+
+2) **A manifest‑centric experimental methodology** that makes intermediate representations and evaluation inputs explicit, enabling ablations that connect proposal count, class imbalance, and downstream ranking behavior.
+
+3) **An efficiency‑aware analysis** demonstrating that inference‑time pruning can expose an accuracy–latency knob without retraining, allowing deployment‑dependent operating points.
+
+4) **A thesis‑integrated comparison framework** that aligns reported literature baselines with the same Top‑5 metric family used for the thesis results.
+
+## 13.2 Summary of results
+
+Across the evaluation presented in Chapters 8–9, the key results are:
+
+- Track A shows that proposal recall saturates quickly in the explored regime, supporting small candidate sets.
+- Track B achieves its best reported Top‑5 “All” metric using a lightweight fusion head with a fixed candidate limit, and exhibits stable TTC regression error across strong checkpoints.
+- Track C demonstrates a measurable accuracy–latency trade‑off via training‑free pruning.
+- Optional priors (hotspots and CLIP‑based re‑ranking), as evaluated here, do not improve overall Top‑5 performance for the tested checkpoint and validation set.
+
+Together, these results position Ego4D‑LiteSTA as a practical baseline for studying how candidate generation, multi‑task coupling, and efficiency controls interact in decision‑frame anticipation.
+
+## 13.3 Closing remarks
+
+Short‑term anticipation sits at the intersection of perception, temporal reasoning, and decision‑making. Ego4D‑LiteSTA emphasizes that progress is not only measured by higher benchmark scores, but also by systems that are understandable, reproducible, and deployable under real constraints.
+
+The modular structure developed in this thesis makes it straightforward to swap components, add stronger backbones, or introduce new priors while preserving a consistent evaluation pipeline. This creates a foundation for future work that can pursue improved accuracy without losing the engineering clarity required for trustworthy comparison.
 
 
 # References
 
+This thesis cites and builds on established work in egocentric video understanding, short‑term anticipation, vision transformers, and lightweight detection and vision–language models.
+
+Because some method names in the comparative tables are taken from curated notes (Chapter 2 and the related‑work summary), the entries below are provided as **reference targets**. Please verify author lists, venues, and years against the official publications before final submission.
+
+## Dataset and benchmark
+
+1) Ego4D (dataset and benchmark paper). **[VERIFY: full citation details]**
+
+## Models and components used or referenced
+
+2) VideoMAE (masked autoencoder for video pretraining). **[VERIFY: full citation details]**
+
+3) YOLOv8 (Ultralytics implementation and model family). **[VERIFY: full citation details / repository version]**
+
+4) CLIP (vision–language pretraining for image–text similarity). **[VERIFY: full citation details]**
+
+## STA baselines and related methods (as discussed in Chapter 2/8)
+
+5) StillFast (Ego4D‑STA baseline). **[VERIFY: full citation details]**
+
+6) GANO v2 (Ego4D‑STA baseline). **[VERIFY: full citation details]**
+
+7) STAformer and variants (including multi‑head and AFF / attention augmentation variants). **[VERIFY: full citation details]**
+
+8) FRCNN+SF baseline (two‑stage detector + anticipation head baseline family). **[VERIFY: full citation details]**
+
+## General background
+
+9) Transformer architecture (sequence modeling with attention). **[VERIFY: full citation details]**
+
+10) Standard metrics references for mAP / Top‑K evaluation. **[VERIFY: full citation details]**
+
 
 # Appendices
+
+The appendices provide supplemental definitions and checklists intended to make the thesis self‑contained.
+
+## Appendix A: Metric definitions (STA v2)
+
+This thesis reports a Top‑5 metric family with four variants:
+
+- **N:** noun‑only ranking.
+- **N+V:** noun and verb jointly correct.
+- **N+δ:** noun and TTC jointly correct (with TTC evaluated under the benchmark’s TTC rule).
+- **All:** noun, verb, and TTC jointly correct.
+
+All Top‑5 mAP values are reported as percentages in Chapters 8–9. When an evaluator emits decimals, the conversion is:
+
+$$\text{percent} = 100 \times \text{decimal}.$$
+
+TTC quality is additionally summarized using **mean absolute error (MAE)** in seconds.
+
+## Appendix B: Track A/B/C artifact inventory (high level)
+
+Ego4D‑LiteSTA is organized into three tracks:
+
+- **Track A (candidates):** produces per‑sample candidate lists and aligned labels (manifests) for downstream training/evaluation.
+- **Track B (head):** trains and evaluates a lightweight multi‑task ranking head over fixed candidate limits.
+- **Track C (pruning):** applies training‑free inference‑time pruning to expose accuracy–latency trade‑offs.
+
+For a file‑level mapping of inputs/outputs and schemas, see the consolidated engineering document in [main_files/trackABC_input_files.md](main_files/trackABC_input_files.md).
+
+## Appendix C: Reproducing key tables
+
+The main tables in this thesis can be regenerated from run summaries by following the checklist in Chapter 11 and using the stored per‑run JSON summaries.
+
+- Chapter 8 tables are sourced from Track A K‑sweeps and Track B/C metric summaries.
+- Chapter 9 tables reuse the same Track‑B metric summaries to compare priors and representative model variants.
+
+To avoid accidental inconsistencies, use a single evaluator implementation for all Track‑B/Track‑C comparisons and keep the validation manifest fixed when comparing variants.
+
+## Appendix D: Notes on literature comparison
+
+The literature reference points (Chapter 2.9 and Chapter 8.4) are included to contextualize the magnitude of scores on Ego4D‑STA v2. They should be interpreted carefully:
+
+1) Always confirm the split (validation vs test) used by each paper.
+
+2) Confirm whether the reported “All” metric matches the evaluator definition used here.
+
+3) Treat differences in candidate generation and supervision as part of the method; comparisons are most meaningful when the evaluation protocol matches.
 
 
