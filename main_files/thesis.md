@@ -42,8 +42,21 @@
 - [Chapter 3: Problem Definition and Data](#chapter-3-problem-definition-and-data)
   - [3.1 Task Definition (STA)](#31-task-definition-sta)
   - [3.2 Dataset, Splits, and Annotations (Ego4D-STA v2)](#32-dataset-splits-and-annotations-ego4d-sta-v2)
+    - [3.2.1 Core visual data: clips, windows, and decision frames](#321-core-visual-data-clips-windows-and-decision-frames)
+    - [3.2.2 Ground-truth annotations available per interaction](#322-ground-truth-annotations-available-per-interaction)
+    - [3.2.3 Structured experiment artifacts (what they contain and why)](#323-structured-experiment-artifacts-what-they-contain-and-why)
+    - [3.2.4 Concrete artifact mapping (conceptual objects to stored records)](#324-concrete-artifact-mapping-conceptual-objects-to-stored-records)
   - [3.3 Metrics](#33-metrics)
+    - [3.3.1 Track A: Recall@K for proposal quality](#331-track-a-recallk-for-proposal-quality)
+    - [3.3.2 Track B/C: Benchmark-style mAP and TTC error](#332-track-bc-benchmark-style-map-and-ttc-error)
   - [3.4 Data Manifests and Label Alignment Decisions](#34-data-manifests-and-label-alignment-decisions)
+    - [3.4.1 Proposal candidate records (Track A output)](#341-proposal-candidate-records-track-a-output)
+    - [3.4.2 Candidate-aligned training examples (Track B input)](#342-candidate-aligned-training-examples-track-b-input)
+    - [3.4.3 Optional derived views (debug and audit)](#343-optional-derived-views-debug-and-audit)
+    - [3.4.4 Label alignment and TTC binning (design decisions)](#344-label-alignment-and-ttc-binning-design-decisions)
+    - [3.4.5 How candidate supervision is constructed (positive/negative definition)](#345-how-candidate-supervision-is-constructed-positivenegative-definition)
+    - [3.4.6 Coordinate conventions and format conversions](#346-coordinate-conventions-and-format-conversions)
+    - [3.4.7 Optional priors and reproducibility outputs](#347-optional-priors-and-reproducibility-outputs)
 - [Chapter 4: System Overview (Tracks A / B / C)](#chapter-4-system-overview-tracks-a--b--c)
   - [4.1 Design Principles](#41-design-principles)
   - [4.2 Track A Overview (Proposals + Manifests)](#42-track-a-overview-proposals--manifests)
@@ -816,31 +829,435 @@ within which Ego4D‑LiteSTA is developed and evaluated.
 
 ## 3.1 Task Definition (STA)
 
+This thesis focuses on the **Short-Term Object Interaction Anticipation (STA)** task as defined in the Ego4D forecasting benchmark. Given a short egocentric clip ending at a decision (last observed) frame, the system must anticipate the upcoming interaction by predicting:
+
+- **Where** the next-active object will be localized in the decision frame (bounding box on the last frame).
+- **What** interaction will occur (verb and noun labels).
+- **When** the interaction will start (time-to-contact, TTC).
+
+In practice, Ego4D-LiteSTA decomposes the problem into a two-stage, proposal-driven formulation:
+
+1) **Candidate generation (Track A / Stage A)**: produce a small set of $K$ candidate bounding boxes on the decision frame.
+2) **Anticipation head (Track B)**: for each candidate box, predict whether it is the next-active object and, optionally, its associated verb/noun/TTC.
+
+Let $I_t$ denote the decision-frame image and $V_{t-L+1:t}$ denote a window of $L$ frames ending at time $t$ (the clip context). Track A produces candidate boxes
+$$
+\mathcal{B}_t = \{b_{t,1}, \ldots, b_{t,K}\}, \qquad b_{t,i} \in \mathbb{R}^4\ (x_1,y_1,x_2,y_2).
+$$
+Track B then predicts, for each candidate $b_{t,i}$, a set of outputs:
+
+- Next-active probability $p_{t,i} = P(y^{\text{pos}}_{t,i}=1 \mid I_t, V_{t-L+1:t}, b_{t,i})$.
+- Optional semantics: $\hat{y}^{\text{noun}}_{t,i}$ and $\hat{y}^{\text{verb}}_{t,i}$.
+- Optional TTC prediction $\hat{\tau}_{t,i}$ (in seconds) and/or a binned TTC label $\hat{y}^{\text{ttc-bin}}_{t,i}$.
+
+The decomposition is deliberate: it allows Track A to be optimized for **high recall** under small $K$, while Track B focuses on **ranking and refining** a small candidate set rather than scanning the full image with dense tokens.
+
 ## 3.2 Dataset, Splits, and Annotations (Ego4D-STA v2)
+
+All experiments are conducted on **Ego4D-STA v2**, using the official training/validation split where applicable and following the benchmark’s definition of clips and decision frames.
+
+This section describes the data at the level used in the thesis: what information exists, how it is structured into reusable “artifacts”, and how each artifact is used by the proposed pipeline.
+
+### 3.2.1 Core visual data: clips, windows, and decision frames
+
+Each training/evaluation example is anchored at a **decision frame** (the last observed frame before contact). The model observes:
+
+- A **still image** of the decision frame (used for spatial localization and candidate scoring).
+- A **short temporal window** of preceding frames (used to encode motion and pre-contact context).
+
+This separation is important for Ego4D-LiteSTA because Track A is image-centric (decision-frame proposals), while Track B consumes both image and short-term temporal context.
+
+### 3.2.2 Ground-truth annotations available per interaction
+
+Ego4D-STA provides supervision that can be summarized as:
+
+- **Next-active object bounding boxes** on the decision frame.
+- A **verb label** describing the action.
+- A **noun label** describing the object.
+- A scalar **time-to-contact (TTC)** indicating how soon contact will occur.
+
+Not every derived training record is required to contain all fields. In particular, Ego4D-LiteSTA treats semantic labels (verb/noun) and TTC as optional extensions on top of the core next-active-object selection problem.
+
+### 3.2.3 Structured experiment artifacts (what they contain and why)
+
+To make experiments auditable and reproducible, the pipeline converts raw benchmark information into a small set of structured artifacts. Conceptually, these are:
+
+1) **Frame index** (visual backbone input)
+  - **Contains:** identifiers for the clip instance, the decision frame index, and the association between identifiers and the corresponding RGB frames.
+  - **Used for:** deterministic reconstruction of the exact visual inputs seen by Track A and Track B.
+
+2) **Proposal candidate set** (Track A output; one record per decision frame)
+  - **Contains:** for each decision frame, a list of up to $K$ candidate boxes in pixel coordinates, plus optional confidence scores (and detector class IDs when produced by a detector).
+  - **Used for:** limiting downstream computation and converting STA into a candidate ranking/refinement problem.
+
+3) **Candidate-aligned supervision** (label attachment)
+  - **Contains:** for each candidate box, a binary next-active label and, when available, associated noun/verb/TTC labels.
+  - **Used for:** training and evaluating the anticipation head as a candidate scorer (and, optionally, a multi-task predictor).
+
+4) **Training/evaluation examples for the head** (Track B input)
+  - **Contains:** either (a) one record per decision frame with its list of candidates, or (b) one record per candidate with a shared frame identifier.
+  - **Used for:** efficient I/O and batching while preserving the per-frame evaluation structure (top-$k$ ranking within each decision frame).
+
+The remainder of Chapter 3 formalizes how these artifacts support evaluation and how label alignment decisions are handled.
+
+### 3.2.4 Concrete artifact mapping (conceptual objects to stored records)
+
+In practice, the artifacts above are stored as small, line-oriented JSON/JSONL files and run summaries to keep every stage inspectable. The mapping used throughout this thesis is:
+
+- **Frame index** → a manifest of decision-frame identifiers and their corresponding decoded RGB frames.
+- **Proposal candidate set** → a JSONL file with **one record per decision frame**, containing $K$ candidate boxes and optional detector scores.
+- **Candidate-aligned supervision** → per-candidate fields attached during label alignment (e.g., `is_positive`, `noun_id`, `verb_id`, `ttc`, and optional TTC-bin).
+- **Head training/evaluation examples** → JSONL records that are either:
+  - **per-candidate** (one line per candidate with a shared frame key), or
+  - **per-frame** (one line per decision frame containing a list of candidates).
+
+This thesis uses the term *manifest* to refer to any such explicit record that fully specifies the (frame, box, label) tuples used by a run.
 
 ## 3.3 Metrics
 
+Ego4D-LiteSTA evaluates each stage with metrics aligned to its role in the pipeline.
+
+### 3.3.1 Track A: Recall@K for proposal quality
+
+Track A is assessed by **Recall@K** on the decision frame: the fraction of frames where at least one of the $K$ proposals overlaps a ground-truth next-active box by at least an IoU threshold.
+
+Let $G_t$ denote the set of ground-truth next-active boxes for frame $t$, and let $\operatorname{IoU}(\cdot,\cdot)$ denote intersection-over-union. Define a “hit” event:
+$$
+\mathrm{hit}(t) = \mathbb{1}\left[\max_{b\in \mathcal{B}_t}\max_{g\in G_t} \operatorname{IoU}(b,g) \ge \theta \right].
+$$
+Then Recall@K is:
+$$
+\mathrm{Recall@K} = \frac{\sum_t \mathrm{hit}(t)}{\sum_t \mathbb{1}[|G_t|>0]}.
+$$
+Recall@K measures whether the proposal stage preserves the ground-truth next-active object(s) inside a small candidate set. It is therefore the primary metric for selecting $K$ and for comparing proposal strategies.
+
+### 3.3.2 Track B/C: Benchmark-style mAP and TTC error
+
+For the anticipation head, we report the benchmark-style mAP family under the **top-5 protocol** (consistent with the thesis introduction):
+
+- **N mAP (top-5)**: box is correct and noun matches.
+- **N+V mAP (top-5)**: box is correct and both noun and verb match.
+- **N+$\delta$ mAP (top-5)**: box is correct and noun + TTC-bin match (TTC discretized).
+- **Overall mAP (top-5)**: combined correctness across localization and semantics, following the benchmark’s top-5 evaluation protocol.
+
+TTC is additionally reported as **mean absolute error** in seconds:
+$$
+\mathrm{TTC\ MAE} = \frac{1}{M}\sum_{j=1}^{M} |\hat{\tau}_j - \tau_j|,
+$$
+computed over valid supervised examples.
+
+Because the goal of Ego4D-LiteSTA is practical efficiency, results are interpreted alongside **latency/VRAM** measurements (Track C pruning), but the core correctness metrics remain Recall@K, top-5 mAP variants, and TTC MAE.
+
+Operationally, “top-5” in this proposal-driven setting means: for each decision frame, the model assigns a final score to every candidate box in the $K$-proposal set, ranks candidates by this score, and evaluates the **top 5 ranked boxes** (with their predicted noun/verb/TTC when enabled) using the benchmark’s detection-style matching. This makes Track B/C directly comparable across different Track A configurations, because the evaluation always starts from the same per-frame candidate pool.
+
 ## 3.4 Data Manifests and Label Alignment Decisions
+
+Reproducibility in this project is driven by a simple principle: **every training and evaluation run is defined by explicit, human-inspectable records of what frames, boxes, and labels were used**. This section explains what those records contain and how they connect the tracks.
+
+### 3.4.1 Proposal candidate records (Track A output)
+
+For each decision frame, Track A produces a **candidate set** of up to $K$ bounding boxes.
+
+Each candidate record contains:
+
+- A **frame identifier** (which interaction instance and which decision frame).
+- A list of candidate boxes in **pixel coordinates** $(x_1,y_1,x_2,y_2)$.
+- Optional **confidence scores** (used for initial ranking and for debugging).
+- Optional **detector class IDs** when a detector is used (not required for the noun-agnostic baseline).
+
+Usage:
+
+- Track A outputs define the search space that Track B will score.
+- Varying $K$ changes the accuracy–efficiency trade-off; Recall@K quantifies this trade-off.
+
+### 3.4.2 Candidate-aligned training examples (Track B input)
+
+Track B is trained and evaluated on **decision-frame keyed examples** that preserve the grouping of candidates within the same decision frame. Depending on the storage choice, the same information can be represented as either (i) one record per decision frame containing a list of candidates, or (ii) one record per candidate with a shared frame identifier.
+
+Each frame-level example contains:
+
+- A frame identifier and the association to the underlying visual context (decision frame + temporal window).
+- A list of candidates, where each candidate contains:
+  - its bounding box,
+  - a binary **next-active label** (`is_positive`), and
+  - optional multi-task labels: **noun ID**, **verb ID**, **TTC** (seconds), and optionally a **TTC-bin**.
+
+Usage:
+
+- The grouping preserves the correct evaluation granularity (rank candidates within each decision frame).
+- It supports variable candidate counts per frame without forcing a fixed dense grid.
+- It allows the same Track B code to operate across different Track A configurations, because the interface is always “frame → list of candidates” at evaluation time, even when stored per-candidate.
+
+### 3.4.3 Optional derived views (debug and audit)
+
+In addition to the frame-level training examples, the pipeline may derive auxiliary views of the data for transparency:
+
+- **Per-candidate crop view:** a cropped ROI image per candidate, useful for qualitative inspection and error analysis.
+- **Per-candidate tabular view:** one row per candidate with normalized box coordinates and attached labels, useful for checking class distributions, missing labels, and outliers.
+
+These views are not conceptually required by the learning formulation, but they make it easier to validate that the dataset is consistent and that the candidate generation step is behaving as intended.
+
+### 3.4.4 Label alignment and TTC binning (design decisions)
+
+Ego4D provides fixed taxonomies for nouns and verbs. Correct training and evaluation require that **IDs are consistent** across splits and across all derived records.
+
+Ego4D-LiteSTA enforces the following decisions:
+
+- Proposal fields (boxes, confidence) are kept separate from semantic labels (noun/verb/TTC), so missing semantics can be detected without corrupting the proposal stage.
+- Multi-task labels are treated as optional: when a field is unavailable for a candidate, the model can fall back to next-active ranking and TTC regression only.
+- TTC binning is deterministic: when TTC bins are required, continuous TTC is discretized using fixed thresholds (by default $(0.5, 1.0, 2.0)$ seconds). If a TTC-bin label is absent, it can be derived from TTC using these thresholds.
+
+Together, these choices ensure that Chapter 7’s experimental comparisons are fair: different models and ablations are evaluated on the same definition of “what constitutes a valid label” and the same discretization of TTC where applicable.
+
+### 3.4.5 How candidate supervision is constructed (positive/negative definition)
+
+The raw STA annotation for a decision frame may include one or more annotated next-active objects. Ego4D-LiteSTA converts this into candidate-level supervision by applying two deterministic steps:
+
+1) **Target selection (when multiple objects exist):** when multiple annotated objects are present for the same decision frame, a single target is selected using a fixed policy (default: the object with minimum TTC). This yields one reference box $g_t$ and its associated labels (noun/verb/TTC) for the frame.
+
+2) **Candidate matching and labeling:** for each candidate box $b_{t,i}$, compute IoU with the selected target $g_t$. A candidate is labeled **positive** if $\operatorname{IoU}(b_{t,i}, g_t) \ge \theta_{\text{pos}}$ (with $\theta_{\text{pos}}$ fixed across runs; $0.5$ is used unless otherwise stated). All remaining candidates for that decision frame are labeled **negative**.
+
+Semantic labels (noun/verb) and TTC are attached only to positive candidates. If a run is configured to train without semantics, the positive/negative labels remain valid and the multi-task fields are simply ignored.
+
+### 3.4.6 Coordinate conventions and format conversions
+
+All geometric boxes are represented as $(x_1,y_1,x_2,y_2)$ in pixel coordinates with origin at the top-left of the decision frame. When “oracle” labels are used for evaluation or proposal conversion, they may be stored in a normalized detector format (e.g., $(c_x,c_y,w,h)$ normalized by image width/height). In that case, conversion to pixel coordinates is deterministic given the decoded frame resolution.
+
+To avoid ambiguity across resolutions, all runs use a fixed decoded frame height for the decision-frame images (e.g., 540p) and all label/proposal boxes are interpreted in that same coordinate system.
+
+### 3.4.7 Optional priors and reproducibility outputs
+
+Some Track B/C variants incorporate simple, optional priors to adjust candidate scores after the head prediction:
+
+- **Hotspot prior:** a lightweight lookup over $(\text{noun\_id}, \text{verb\_id})$ pairs that provides a default bias when a pair is unseen.
+- **CLIP-based re-ranking (optional):** uses noun/verb label text derived from the official taxonomies to compute similarity-based adjustments.
+
+Regardless of which options are enabled, every run produces a consistent set of audit artifacts:
+
+- A **run log** capturing the full configuration (paths, toggles, hyperparameters), system information, and aggregate metrics.
+- **Metric dumps** storing scalar results (including the thesis top-5 variants).
+- **Prediction exports** storing per-candidate outputs (scores, predicted labels, and errors), enabling qualitative inspection and downstream analysis.
 
 
 # Chapter 4: System Overview (Tracks A / B / C)
 
 ## 4.1 Design Principles
 
+Ego4D‑LiteSTA is organized as a three‑track pipeline designed around two constraints: (i) STA requires both spatial localization and short‑term temporal context, and (ii) the system must be reproducible and efficient on modest hardware. The tracks are separated so that each component can be evaluated with a metric aligned to its role (Chapter 3) while still producing artifacts that compose cleanly.
+
+The system follows five design principles:
+
+1) **Proposal‑driven decomposition.** Localization on the decision frame is handled first by producing a small candidate set. Subsequent reasoning is performed only on these candidates. This reduces computation and makes the learning problem a ranking/refinement task rather than dense search.
+
+2) **Auditability through explicit manifests.** Every stage reads and writes human‑inspectable records that specify the exact frames, boxes, and labels used by a run. This allows runs to be repeated, compared, and debugged without ambiguity.
+
+3) **Metric alignment by stage.** Track A is optimized for high recall under small $K$ (Recall@K). Track B is optimized for correctness under the benchmark protocol (top‑5 mAP and TTC error). Track C is optimized for efficiency–accuracy trade‑offs (accuracy retained under lower latency/VRAM).
+
+4) **Optional semantics and priors.** The core task is next‑active object selection. Noun/verb prediction and TTC modeling are treated as optional extensions that can be enabled without changing the proposal interface. Similarly, simple priors (e.g., hotspot biases or CLIP‑based re‑ranking) are optional score components, not hard requirements.
+
+5) **Training is isolated from efficiency knobs.** The primary efficiency knob (token pruning) is evaluated as a training‑free modification at inference time. This makes the latency–accuracy curve easier to study and avoids conflating pruning with representation learning.
+
 ## 4.2 Track A Overview (Proposals + Manifests)
+
+Track A transforms each decision frame into a compact candidate set of bounding boxes that is likely to contain the next‑active object. Conceptually, it answers the question: *“Which $K$ regions should the system consider?”*
+
+Track A operates in two stages:
+
+- **Stage A (candidate generation).** A detector or oracle source produces up to $K$ candidate boxes on the decision frame, optionally with confidence scores. The objective is high recall: it is acceptable for the candidate set to include false positives as long as the next‑active object is rarely missed.
+
+- **Stage B (manifest construction and label attachment).** Candidate boxes are aligned to ground truth when supervision is available, producing candidate‑level labels (positive/negative and optional noun/verb/TTC). Stage B may also derive auxiliary views such as cropped candidate regions and flattened, per‑candidate tables for inspection.
+
+The key output of Track A is not only the candidate set itself but also the **manifests** that make downstream training and evaluation deterministic. These manifests provide a stable interface between Track A and Track B/C: a decision frame identifier plus a list of candidates with any available labels.
+
+From a system perspective, Track A is the primary control for the **accuracy–efficiency trade‑off**: increasing $K$ tends to improve recall (benefiting Track B/C) but increases per‑frame computation downstream.
 
 ## 4.3 Track B Overview (Lightweight Fusion Head)
 
+Track B is the anticipation head that scores candidates produced by Track A and, when enabled, predicts semantics and TTC. It answers: *“Among the candidates, which region is next‑active, and what interaction is about to occur?”*
+
+Inputs and outputs are structured around the decision frame:
+
+- **Inputs.** For each decision frame, Track B consumes the candidate set and the associated visual context: the decision frame image and a short temporal window of preceding frames. Each candidate is represented by its box geometry and any derived crop or region representation.
+
+- **Outputs.** For every candidate, Track B produces a next‑active score and optional predictions for noun, verb, and TTC. Candidates are then ranked by a final score that may include optional priors (e.g., hotspot bias or CLIP‑based re‑ranking).
+
+The design is intentionally lightweight. Rather than performing dense spatiotemporal detection, Track B focuses on **candidate ranking** under a small $K$, which enables:
+
+- Efficient training and inference.
+- Clean comparability across different proposal strategies (the candidate interface remains unchanged).
+- Direct compatibility with the benchmark’s **top‑5** evaluation protocol by selecting the top‑ranked candidates per decision frame.
+
+Track B is also the main locus for representational choices (how temporal context is encoded, how image and video features are fused, and how multi‑task heads are trained). These choices are detailed in Chapters 5–7; Chapter 4 emphasizes the system‑level contract: Track B is a scorer/predictor operating over Track A candidates and producing ranked outputs for evaluation.
+
 ## 4.4 Track C Overview (Training-Free Pruning)
+
+Track C studies efficiency improvements that do not require retraining, focusing on token‑level pruning applied at inference time. It answers: *“How much compute can be removed while keeping accuracy close to Track B?”*
+
+Track C reuses the same candidate interface and evaluation protocol as Track B. The difference is that Track C introduces a pruning policy into the feature extraction and fusion pathway, reducing the number of tokens processed for each decision frame and its temporal context.
+
+This track is separated for two reasons:
+
+1) **Controlled efficiency analysis.** By keeping training fixed and changing only inference‑time computation, Track C isolates the impact of pruning on latency, VRAM, and accuracy.
+
+2) **Deployment‑oriented reporting.** Track C pairs correctness metrics (top‑5 mAP variants and TTC error) with runtime measurements (e.g., latency percentiles and throughput), enabling an accuracy–latency Pareto analysis.
+
+Overall, Track C turns efficiency into an explicit, measurable knob while preserving the reproducibility guarantees of the pipeline: pruning settings and runtime measurements are logged alongside the same manifest‑defined inputs and benchmark‑style outputs.
 
 
 # Chapter 5: Methodology
 
 ## 5.1 Track A: Candidate Generation and Recall@K
 
+Track A is designed to maximize the probability that the true next‑active object appears in a small candidate set. The core design choice is to optimize for **coverage** (recall) rather than class specificity: a candidate set that consistently includes the next‑active region enables downstream ranking and multi‑task prediction to operate efficiently.
+
+### Candidate generation (Stage A)
+
+Given the decision frame $I_t$, Stage A outputs a set of $K$ candidate boxes
+$$
+\mathcal{B}_t = \{(b_{t,i}, s_{t,i})\}_{i=1}^{K},
+$$
+where $b_{t,i}$ is a pixel‑space bounding box and $s_{t,i}$ is an optional confidence score.
+
+Two proposal sources are used in this thesis:
+
+- **Detector proposals.** A lightweight object detector produces a ranked list of candidate detections. The top candidates are selected after standard post‑processing (confidence thresholding and non‑maximum suppression) and then truncated to $K$.
+
+- **Oracle proposals (upper bound for proposals).** Ground‑truth label boxes (when available) are converted into the same candidate representation. Oracle proposals are not intended as a deployable method; they isolate the effect of downstream ranking and semantics by removing proposal errors.
+
+The primary knob is $K$. Larger $K$ increases recall but increases downstream computation approximately linearly, since Track B and Track C score candidates individually.
+
+### Proposal evaluation: Recall@K
+
+Stage A is evaluated by Recall@K (Chapter 3). Let $g_t$ be the selected target box for a decision frame (Section 3.4.5), and define
+$$
+\mathrm{hit}(t) = \mathbb{1}\left[\max_{b \in \mathcal{B}_t} \operatorname{IoU}(b, g_t) \ge \theta\right].
+$$
+Then
+$$
+\mathrm{Recall@K} = \frac{\sum_t \mathrm{hit}(t)}{\sum_t 1}.
+$$
+
+We use Recall@K as the stage selection criterion because Track A’s role is to preserve the true next‑active region in a small set; it is not penalized for including additional plausible regions.
+
+### Manifest construction and label attachment (Stage B)
+
+Stage B transforms the proposal set into training/evaluation examples for the head by attaching candidate‑level supervision:
+
+1) **Candidate alignment.** For each candidate $b_{t,i}$, compute IoU with the selected target $g_t$ and assign a binary label `is_positive` using a fixed threshold $\theta_{\text{pos}}$ (Section 3.4.5).
+
+2) **Semantic attachment (optional).** For positive candidates, attach noun/verb IDs and TTC when available; for negatives, semantic fields are either omitted or masked.
+
+3) **Optional derived views.** Cropped candidate regions and tabular summaries are generated to enable inspection, distribution checks, and qualitative error analysis.
+
+The key methodological outcome of Stage B is a manifest that fully specifies the (frame, candidate box, label) tuples used by Tracks B and C.
+
 ## 5.2 Track B: Tokenization, Fusion (FGTP + Dual Cross-Attention), and Heads
 
+Track B takes the candidate set from Track A and predicts, for each candidate, whether it corresponds to the next‑active object and (optionally) the associated noun, verb, and TTC. The design goal is to incorporate short‑term temporal cues while remaining lightweight and compatible with candidate ranking.
+
+### Inputs and representations
+
+For each decision frame, Track B consumes:
+
+- The decision‑frame image $I_t$.
+- A short clip window $V_{t-L+1:t}$ ending at $t$.
+- Candidate boxes $\{b_{t,i}\}_{i=1}^{K}$.
+
+The system encodes the visual context into two token sets:
+
+- **Image tokens** $\mathbf{X} \in \mathbb{R}^{N \times d}$ extracted from the decision frame.
+- **Video tokens** $\mathbf{Z} \in \mathbb{R}^{M \times d}$ extracted from the temporal window.
+
+The exact backbone choices are treated as implementation details; methodologically, the requirement is that both modalities yield $d$‑dimensional token sequences with consistent normalization.
+
+### Frame‑Guided Temporal Pooling (FGTP)
+
+Video tokens often contain redundancy, especially in short egocentric windows with repeated background content. FGTP compresses temporal information into a compact representation guided by the decision frame. Concretely, FGTP computes an attention‑like aggregation of video tokens conditioned on image tokens:
+
+$$
+\mathbf{Z}^{\mathrm{FGTP}} = \mathrm{Pool}(\mathbf{Z} \mid \mathbf{X}),
+$$
+
+where $\mathbf{Z}^{\mathrm{FGTP}}$ contains fewer effective tokens than $\mathbf{Z}$ while preserving motion cues most relevant to the decision frame.
+
+### Dual cross‑attention fusion
+
+After FGTP, Track B performs lightweight bidirectional fusion between the decision frame and the temporal context:
+
+- **Image \(\leftarrow\) video:** enrich image tokens with pooled temporal context.
+- **Video \(\leftarrow\) image:** align temporal cues to decision‑frame spatial structure.
+
+This dual interaction is crucial for STA because the next‑active object is localized on the decision frame but is often disambiguated by preceding motion (hand trajectory, object approach, and pre‑contact dynamics).
+
+### Candidate pooling and per‑candidate features
+
+Each candidate box $b_{t,i}$ is converted into a per‑candidate feature vector $\mathbf{h}_{t,i}$ by pooling from the fused token maps. The pooling operation is designed to be lightweight and stable across varying $K$:
+
+$$
+\mathbf{h}_{t,i} = \mathrm{ROI\_Pool}(b_{t,i}; \mathbf{X}', (\mathbf{Z}^{\mathrm{FGTP}})'),
+$$
+
+where $(\mathbf{X}', (\mathbf{Z}^{\mathrm{FGTP}})')$ are the fused representations. This produces one feature vector per candidate, enabling independent scoring and straightforward batching.
+
+### Prediction heads and scoring
+
+Track B outputs for each candidate:
+
+- **Next‑active score:**
+$$
+p_{t,i} = \sigma(\mathbf{w}_{\mathrm{pos}}^\top \mathbf{h}_{t,i}),
+$$
+where $\sigma$ is the sigmoid.
+
+- **Optional noun/verb classifiers:** softmax heads producing $\hat{y}^{\text{noun}}_{t,i}$ and $\hat{y}^{\text{verb}}_{t,i}$.
+
+- **Optional TTC prediction:** either a regression head $\hat{\tau}_{t,i}$ and/or a binned classifier $\hat{y}^{\text{ttc-bin}}_{t,i}$.
+
+When priors are enabled, the final ranking score is formed by combining the learned next‑active score with optional additive components (e.g., hotspot bias or CLIP‑based re‑ranking) while keeping the candidate interface unchanged.
+
+### Training objective
+
+Track B is trained with a multi‑task objective over candidates, with masking for missing labels:
+
+$$
+\mathcal{L} = \lambda_{\mathrm{pos}}\,\mathcal{L}_{\mathrm{pos}} + \lambda_{\mathrm{noun}}\,\mathcal{L}_{\mathrm{noun}} + \lambda_{\mathrm{verb}}\,\mathcal{L}_{\mathrm{verb}} + \lambda_{\mathrm{ttc}}\,\mathcal{L}_{\mathrm{ttc}},
+$$
+
+where
+
+- $\mathcal{L}_{\mathrm{pos}}$ is binary cross‑entropy on `is_positive`,
+- $\mathcal{L}_{\mathrm{noun}}$ and $\mathcal{L}_{\mathrm{verb}}$ are cross‑entropy losses applied only when the corresponding labels are present (typically on positives),
+- $\mathcal{L}_{\mathrm{ttc}}$ is either L1/L2 regression loss on TTC and/or cross‑entropy on TTC bins.
+
+At evaluation time, candidates are ranked per decision frame by the final score and the **top‑5** outputs are evaluated under the benchmark protocol (Section 3.3.2).
+
 ## 5.3 Track C: Rollout-Guided Token Pruning (RGTP)
+
+Track C introduces inference‑time token pruning to reduce compute while preserving accuracy. The key methodological requirement is **training‑free control**: pruning is applied without changing learned weights, enabling a clean analysis of the accuracy–latency trade‑off.
+
+### Motivation
+
+Token‑based video models process a large number of tokens, many of which contribute little to the final prediction for a given decision frame. In STA, this redundancy is amplified by short horizons and repeated background. Pruning seeks to remove low‑utility tokens before expensive fusion and head computations.
+
+### Rollout‑guided importance
+
+RGTP assigns an importance score to tokens using attention rollout‑style propagation. Let $\alpha_j$ denote the importance of token $j$ after rollout aggregation across layers/heads. Tokens are then ranked by $\alpha_j$.
+
+Given a requested pruning rate $r \in [0,1)$, Track C keeps the top fraction $(1-r)$ of tokens and drops the remainder:
+
+$$
+\mathbf{Z}_{\mathrm{kept}} = \{z_j \in \mathbf{Z} : \alpha_j \ge q_{1-r}(\alpha)\}.
+$$
+
+Here, $q_{1-r}(\alpha)$ denotes the $(1-r)$ quantile of the token‑importance scores $\{\alpha_j\}$ for the current input.
+
+The pruning policy can be applied to video tokens, image tokens, or both, but the system is evaluated under a single fixed policy per run to keep comparisons fair.
+
+### Integration and evaluation
+
+Track C reuses Track B’s candidate scoring pipeline with the pruned token sets. Because the candidate set and manifests are unchanged, the evaluation remains identical: rank candidates per decision frame, evaluate the **top‑5** outputs, and report TTC error.
+
+In addition to accuracy metrics, Track C reports runtime metrics (e.g., latency percentiles and throughput) collected under consistent measurement settings. This produces an accuracy–latency Pareto curve that quantifies how much compute reduction is achievable at acceptable performance loss.
 
 
 # Chapter 6: Implementation and Engineering
