@@ -123,7 +123,12 @@ This chapter documents Track C as a thesis-ready narrative and lab manual. It fo
 - Instrumentation:
   - `instrumentation.record_latency/vram/flops`, `use_cuda_events`, `warmup_iters`, `bench_iters`, `bench_samples`.
 - Rate sweep:
-  - `rate_sweep.enabled`, `rate_sweep.rates` for scripted sweeps (not implemented in main script by default).
+  - `rate_sweep.enabled`, `rate_sweep.rates` to run a multi-rate evaluation loop (opt-in; defaults off).
+
+### 7.1 Configuration Wiring Notes
+- `evaluation.candidate_limit` and `evaluation.normalize_ttc` are wired (fallback to legacy `training.*` if present).
+- Instrumentation keys accept both `instrumentation.measure_*` and `instrumentation.record_*` naming.
+- `output.runs_dir` and `output.metrics_subdir` are wired for metrics output location.
 
 ---
 
@@ -266,6 +271,7 @@ This chapter documents Track C as a thesis-ready narrative and lab manual. It fo
 ## 16. Reproducibility and Logging
 - Config provenance: summary JSON records eval/rgtp/instrumentation configs; metrics include checkpoint/manifest paths.
 - RunLogger: Track C attempts to log configs, metrics, artifacts; warnings are non-fatal if logger missing.
+- Config snapshots: each invocation writes `resolved_config.json` in the RunLogger run folder under `local_extraction/runs/Track_C/`, and summaries include `config_name` + `yaml_config_flat`.
 - Naming: metrics filename encodes rate and timestamp; keep a short text note per run for thesis tables.
 - Checkpoint provenance: store which Track B checkpoint was used (best vs final).
 

@@ -16,61 +16,179 @@ model:
     # - "resnet18": Current exocentric/web-pretrained 2D backbone (baseline)
     # - "videomae_ego": In-domain egocentric VideoMAE encoder (requires pretrained weights)
     video_backbone: "resnet18"
+    # Options:
+    # - "resnet18"     # fastest baseline (especially with pre-extracted tokens)
+    # - "videomae_ego"  # stronger in-domain features (slower; needs weights/tokens)
     
     backbone: "resnet18"
+    # Options:
+    # - "resnet18"      # matches the implemented 2D code-path
+    # - "videomae_ego"   # use for readability when mirroring `video_backbone` (cosmetic)
+    # - "custom"        # placeholder label if you add your own tokenizer backbone
+    # NOTE: this key is mostly cosmetic; `video_backbone` drives the actual tokenizer selection.
     pretrained: true
-    img_size: 224
+    # Options:
+    # - true   # use ImageNet weights for ResNet18 (recommended)
+    # - false  # random init (usually worse unless you train end-to-end)
+    # Wired: used when building the ResNet18 tokenizer backbone.
+    img_size: 256
+    # Options:
+    # - 160  # faster/cheaper, loses detail
+    # - 224  # standard
+    # - 256  # a bit more detail, slower
+    # - 320  # heavy; use for ablations only
     freeze_backbone: true
-    time_len: 8          # T frames in temporal window
+    # Options:
+    # - true   # freeze visual backbone (default; stable, fast)
+    # - false  # fine-tune backbone (slower, more VRAM, can overfit)
+    # Wired: controls whether backbone params are frozen in the tokenizer.
+    # NOTE: token extraction runs in eval/no-grad; fine-tuning requires a training path.
+    time_len: 16          # T frames in temporal window
+    # Options:
+    # - 4   # minimal context, faster
+    # - 8   # default
+    # - 16  # more context, slower
+    # - 32  # long context, can be heavy
     time_stride: 2       # step between frames
+    # Options:
+    # - 1  # dense window (short span)
+    # - 2  # default
+    # - 4  # wider span (longer-term cues)
+    # - 8  # very wide; may miss quick interactions
     
     # VideoMAE-specific settings (only used when video_backbone="videomae_ego")
     videomae:
       weights_path: "${paths.local_extraction}/runs/VideoMAE/videomae_ego_encoder.pt"
+      # Options:
+      # - null  # no weights -> random init (not recommended)
+      # - "${paths.local_extraction}/runs/VideoMAE/videomae_ego_encoder.pt"  # repo default path
+      # - "${paths.local_extraction}/videomae_local_part/checkpoints_ego_scratch/videomae_ego_scratch_last.pt"  # ego-scratch checkpoint
+      # - "${paths.local_extraction}/videomae_local_part/checkpoints_ego_scratch/videomae_ego_scratch_best.pt"  # best checkpoint if you save it
       patch_size: 16
+      # Options:
+      # - 16  # standard VideoMAE base/large/huge
+      # - 14  # only if your encoder was built with 14
+      # - 32  # coarser patches (only if pretrained with 32)
       tubelet_size: 2     # temporal patch size
+      # Options:
+      # - 1  # frame-wise patches (only if pretrained with 1)
+      # - 2  # standard
+      # - 4  # longer temporal patch (only if pretrained with 4)
       embed_dim: 768
+      # Options (must match your encoder):
+      # - 768   # VideoMAE base
+      # - 1024  # VideoMAE large
+      # - 1280  # VideoMAE huge
       depth: 12
+      # Options (must match your encoder):
+      # - 12  # base
+      # - 24  # large
+      # - 32  # huge
       num_heads: 12
+      # Options (must match your encoder):
+      # - 12  # base
+      # - 16  # large
+      # - 20  # huge
       freeze_encoder: true
+      # Options:
+      # - true   # freeze encoder weights (default)
+      # - false  # fine-tune encoder (heavy; needs more VRAM and careful LR)
   
   # Projector (512 -> token_dim for resnet18, 768 -> token_dim for videomae)
   projector:
     in_dim: 512           # 512 for resnet18, 768 for videomae
+    # Options (must match backbone output):
+    # - 512   # ResNet18 output channels
+    # - 768   # VideoMAE base (embed_dim=768)
+    # - 1024  # VideoMAE large (embed_dim=1024)
+    # - 1280  # VideoMAE huge (embed_dim=1280)
     out_dim: 256
+    # Options for out_dim (token_dim / model capacity):
+    # - 128  # fastest, lowest capacity
+    # - 256  # default
+    # - 384  # more capacity, slower
+    # - 512  # heaviest; use for ablations
   
   # Fusion module (FGTP + dual cross-attention)
   fusion:
     dim: 256
-    layers: 2
+    layers: 4
+    # Options:
+    # - 1  # fastest, less capacity
+    # - 2  # default
+    # - 4  # higher capacity, slower
+    # - 6  # heavy; use for ablations
     heads: 8
-    dropout: 0.1
+    # Options:
+    # - 4   # faster, less expressive
+    # - 8   # default (256 / 8 = 32 dims/head)
+    # - 12  # requires dim divisible by 12 (e.g., set fusion.dim=384 first)
+    # - 16  # requires dim divisible by 16 (e.g., set fusion.dim=256 or 512)
+    dropout: 0.2
+    # Options:
+    # - 0.0  # no dropout (can overfit)
+    # - 0.1  # default
+    # - 0.2  # stronger regularization
+    # - 0.3  # very strong
   
   # Prediction head
   head:
     dim: 256
     hidden: 256
+    # Options:
+    # - 128  # smaller head, faster
+    # - 256  # default
+    # - 512  # bigger head, slower
     num_classes: 2  # binary next-active
-    dropout: 0.1
+    # Options:
+    # - 2   # binary next-active (default)
+    # - 3   # example: add an "unknown/ignore" class (requires label + metric changes)
+    # - 5   # example: multi-way activity state (requires dataset + head alignment)
+    # NOTE: changing this requires aligning labels, loss, and metrics.
+    dropout: 0.2
+    # Options:
+    # - 0.0  # no dropout
+    # - 0.1  # default
+    # - 0.2  # stronger regularization
 
 # -----------------------------------------------------------------------------
 # Multi-Task Learning
 # -----------------------------------------------------------------------------
 multi_task:
   enabled: true
+  # Options:
+  # - true   # predict next_active + noun + verb + ttc (default)
+  # - false  # next_active only (simpler/faster)
   
   # Task toggles
   predict_noun: true
   predict_verb: true
   predict_ttc: true
+  # Options:
+  # - (all true)  # full multi-task
+  # - noun=false  # remove noun head if nouns are noisy
+  # - verb=false  # remove verb head
+  # - ttc=false   # disable TTC (classification-only)
   
   # TTC mode: 'reg' (regression) or 'bin' (classification)
   ttc_mode: "reg"
+  # Options:
+  # - "reg"  # regression TTC (default)
+  # - "bin"  # classification bins (more stable if TTC labels noisy)
   ttc_bins: 5  # number of bins if ttc_mode='bin'
+  # Options:
+  # - 3   # coarse
+  # - 5   # default
+  # - 8   # finer
+  # - 12  # very fine
   
   # TTC bin thresholds for classification (seconds)
   # Default bins: [0.0, 0.5), [0.5, 1.0), [1.0, 2.0), [2.0, +inf)
   ttc_thresholds: [0.5, 1.0, 2.0]
+  # Options (example threshold sets):
+  # - [0.5, 1.0, 2.0]       # default
+  # - [0.25, 0.5, 1.0, 2.0] # finer early TTC
+  # - [1.0, 2.0, 4.0]       # coarser, longer horizons
   
   # Loss weights
   loss_weights:
@@ -78,6 +196,10 @@ multi_task:
     noun: 1.0
     verb: 1.0
     ttc: 1.0
+  # Options (examples):
+  # - {next_active: 1.0, noun: 1.0, verb: 1.0, ttc: 1.0}  # equal
+  # - {next_active: 1.0, noun: 0.5, verb: 0.5, ttc: 1.0}  # downweight noun/verb
+  # - {next_active: 1.0, noun: 1.0, verb: 1.0, ttc: 0.3}  # downweight TTC
 
 # -----------------------------------------------------------------------------
 # Training Configuration
@@ -85,73 +207,198 @@ multi_task:
 training:
   # Mode: 'main' (full training) or 'demo' (quick test)
   mode: "main"
+  # Options:
+  # - "main"  # full training
+  # - "demo"  # quick pipeline check
   
   # Hyperparameters
-  epochs: 20
+  epochs: 30
+  # Options:
+  # - 5    # quick sanity check
+  # - 20   # default
+  # - 50   # longer training (if data supports it)
+  # - 100  # heavy; only if you monitor overfitting
   batch_size: 8
-  lr: 1.0e-3
+  # Options:
+  # - 2   # low VRAM
+  # - 8   # default
+  # - 16  # faster on larger GPUs
+  # - 32  # heavy; may require AMP
+  lr: 3.0e-4
+  # Options:
+  # - 3.0e-4  # more stable, slower convergence
+  # - 1.0e-3  # default
+  # - 3.0e-3  # faster but can diverge
   min_lr: 1.0e-5
+  # Options:
+  # - 0.0e0   # no floor
+  # - 1.0e-6  # very low floor
+  # - 1.0e-5  # default
+  # - 1.0e-4  # higher floor
   warmup_epochs: 1.0
+  # Options:
+  # - 0.0  # no warmup (riskier)
+  # - 1.0  # default
+  # - 2.0  # safer for new backbones
   
   # Regularization
-  label_smoothing: 0.05
-  weight_decay: 0.01
+  label_smoothing: 0.10
+  # Options:
+  # - 0.0   # no smoothing (can overfit)
+  # - 0.05  # default
+  # - 0.10  # more regularization
+  # - 0.20  # often too much
+  weight_decay: 0.05
+  # Options:
+  # - 0.0    # no weight decay
+  # - 0.01   # default
+  # - 0.05   # stronger regularization
+  # - 0.1    # very strong
   
   # Data
   candidate_limit: 16
+  # Options:
+  # - 8   # faster, more missed positives
+  # - 16  # default
+  # - 32  # higher recall, slower
+  # - 64  # heavy; use for recall-focused ablations
   normalize_ttc: true
+  # Options:
+  # - true   # more stable TTC regression
+  # - false  # raw TTC (can be noisier)
   
   # Checkpointing
   save_epoch_checkpoints: true
+  # Options:
+  # - true   # keeps full history (uses more disk)
+  # - false  # only best checkpoint
   save_best_checkpoint: true
+  # Options:
+  # - true   # recommended
+  # - false  # only epoch checkpoints
   
   # Early stopping
   early_stopping:
     enabled: true
-    patience: 5
+    # Options:
+    # - true   # recommended (prevents overfitting)
+    # - false  # run full epochs always
+    patience: 7
+    # Options:
+    # - 3   # faster stop
+    # - 5   # default
+    # - 10  # more patience
     monitor: "mAP"
+    # Options:
+    # - "mAP"       # default
+    # - "accuracy"  # if you care about top-1 binary
+    # - "ttc_mae"   # if TTC is priority
     mode: "max"  # 'max' or 'min'
+    # Options:
+    # - "max"  # for mAP/accuracy
+    # - "min"  # for loss/MAE
   
   # Evaluation
   eval_every: 1
+  # Options:
+  # - 1   # evaluate every epoch (default)
+  # - 2   # half as frequent (faster training)
+  # - 5   # sparse evaluation
   
   # Mixed precision
   amp: false
+  # Options:
+  # - true   # faster on GPU, lower VRAM (recommended for big models)
+  # - false  # deterministic-ish, slower
 
 # -----------------------------------------------------------------------------
 # Demo Mode Configuration
 # -----------------------------------------------------------------------------
 demo:
   enabled: false
+  # Options:
+  # - true   # run demo mode
+  # - false  # normal
   steps: 10
+  # Options:
+  # - 5    # very quick
+  # - 10   # default
+  # - 50   # more meaningful
   variant: "loader"  # 'loader' or 'standalone'
+  # Options:
+  # - "loader"      # uses the full training dataloader path (recommended)
+  # - "standalone"  # minimal path
   use_real_labels: true
+  # Options:
+  # - true   # use real labels (if available)
+  # - false  # synthetic labels (pipeline only)
 
 # -----------------------------------------------------------------------------
 # Evaluation Configuration
 # -----------------------------------------------------------------------------
 evaluation:
   batch_size: 8
+  # Options:
+  # - 1   # lowest VRAM
+  # - 8   # default
+  # - 16  # faster on bigger GPUs
   
   # Metrics
   compute_map: true
+  # Options:
+  # - true   # compute mAP (default)
+  # - false  # skip for speed
   compute_ttc_mae: true
+  # Options:
+  # - true   # compute TTC MAE
+  # - false  # skip TTC metrics
   
   # Visualization
   save_overlays: true
+  # Options:
+  # - true   # writes visualization overlays
+  # - false  # faster / less disk
   topk_overlay: 3
+  # Options:
+  # - 1   # only best prediction
+  # - 3   # default
+  # - 5   # more qualitative coverage
   
   # Hotspot priors (PEAR-style)
   hotspot_priors:
-    enabled: true
+    enabled: false
+    # Options:
+    # - true   # use hotspot priors
+    # - false  # disable
     path: "${paths.local_extraction}/${version}/hotspot_priors_train_logodds_min10.json"
+    # Options (examples):
+    # - "${paths.local_extraction}/${version}/hotspot_priors_train_logodds_min10.json"  # default
+    # - "${paths.local_extraction}/${version}/hotspot_priors_train_prob_min10.json"     # probability variant (if you generated it)
+    # - null  # disable file loading (only meaningful if enabled=false)
     alpha: 0.3
+    # Options:
+    # - 0.0  # disable influence (still loads priors if enabled)
+    # - 0.3  # default blend
+    # - 0.6  # strong prior influence
+    # - 0.9  # nearly prior-dominated (risky if noun/verb noisy)
   
   # CLIP re-ranking
   clip_rerank:
-    enabled: true
-    model: "ViT-B/32"
+    enabled: False
+    # Options:
+    # - true   # use CLIP
+    # - false  # disable
+    model: "ViT-L/14"
+    # Options:
+    # - "ViT-B/32"  # fastest common
+    # - "ViT-L/14"  # stronger but slower
+    # - "RN50"      # alternate CLIP backbone (if available)
     weight: 0.3
+    # Options:
+    # - 0.0  # no CLIP influence
+    # - 0.3  # default
+    # - 0.6  # strong CLIP influence
+    # - 0.9  # CLIP-dominated (slow and risky)
 
 # -----------------------------------------------------------------------------
 # Data Sources
@@ -159,26 +406,56 @@ evaluation:
 data:
   # Stage B run for candidates (null = auto-detect latest)
   stageB_run: null
+  # Options:
+  # - null  # auto-detect latest Track A Stage B run
+  # - "local_extraction/runs/Track_A/<run_name>"  # pin to a specific run
   
   # Manifest paths (null = auto-detect)
   train_manifest: null
   val_manifest: null
+  # Options:
+  # - null  # auto-detect (recommended)
+  # - "local_extraction/runs/Track_A/<run_name>/manifest_train.jsonl"  # pin specific
+  # - "local_extraction/runs/Track_A/<run_name>/manifest_val.jsonl"    # pin specific
   
   # Pre-extracted ResNet18 tokens for ~120x faster training
   # Set to "v2/resnet18_tokens" after running:
   #   python -m trackB.extract_resnet_tokens
   # Set to null for on-the-fly extraction (slow but no pre-processing needed)
   tokens_root: "v2/resnet18_tokens"
+  # Options:
+  # - "v2/resnet18_tokens"                 # fastest common path
+  # - null                                  # on-the-fly extraction (slow, no preprocessing)
+  # - "videomae_trackB_tokens/tokens"       # pre-extracted HF VideoMAE tokens
+  # - "videomae_trackB_tokens_scratch/tokens"  # pre-extracted ego-scratch VideoMAE tokens
+  # NOTE: if `model.tokenizer.video_backbone="videomae_ego"`, you typically want a VideoMAE tokens_root.
 
 # -----------------------------------------------------------------------------
 # Smoke Test Configuration
 # -----------------------------------------------------------------------------
 smoke_test:
   enabled: false
+  # Options:
+  # - true   # run a tiny 1-epoch training sanity check
+  # - false  # normal training
   max_samples: 5
+  # Options:
+  # - 5    # default quick check
+  # - 50   # slightly more meaningful
+  # - 200  # heavier sanity check (still not full training)
   max_epochs: 1
+  # Options:
+  # - 1   # default
+  # - 2   # slightly more signal
+  # - 5   # longer smoke test
   validate_pycache: true
+  # Options:
+  # - true   # fail fast if stale __pycache__ issues exist
+  # - false  # skip that check
   skip_save: true
+  # Options:
+  # - true   # avoid writing large checkpoints
+  # - false  # write checkpoints as usual
   expected_outputs:
     - "checkpoints/"
     - "metrics/"

@@ -25,10 +25,11 @@ Track C applies **Run-time Guided Token Pruning (RGTP)** on top of a trained Tra
 ---
 
 ## 4) Runtime Config (edit in `trackC_pruning.py`)
-`RuntimeConfig` toggles (no CLI by default):
-- Paths: `checkpoint`, `stageB_run`, `val_manifest` (None → auto-discover).
-- Pruning: `pruning_enabled`, `rgtp_rate` (fraction to drop), `min_keep`.
-- Instrumentation: `measure_latency`, `measure_vram`, `measure_flops`, `bench_warmup`, `bench_iters`, `bench_samples`.
+`RuntimeConfig` toggles are populated from `local_extraction/configs/trackC.yaml` (plus CLI overrides):
+- Paths: `evaluation.checkpoint`, `evaluation.stageB_run`, `evaluation.val_manifest` (null → auto-discover).
+- Pruning: `rgtp.enabled`, `rgtp.rate` (fraction to drop), `rgtp.min_keep`.
+- Instrumentation: supports both `instrumentation.measure_*` and `instrumentation.record_*` keys; also wires `instrumentation.enabled`, `use_cuda_events`, and benchmark knobs.
+- Smoke/sweep: `smoke_test.*` (cap + small rate list) and `rate_sweep.*` (multi-rate loop).
 
 Tips:
 - Set `checkpoint` if you want a specific Track B model; otherwise latest/final is auto-picked.
@@ -40,6 +41,10 @@ Tips:
 - Paths: `frames_root`, `manifests_root`, `trackA_runs_root`, `checkpoint`, `stageB_run`, `val_manifest`.
 - Data: `batch_size`, `candidate_limit`, `normalize_ttc`, `num_workers` (keep 0).
 - Defaults point to `local_extraction/v2` assets and Track B runs/checkpoints.
+
+Notes:
+- `evaluation.candidate_limit` / `evaluation.normalize_ttc` are wired (with fallback to legacy `training.*` if present).
+- Metrics output directory is wired via `output.runs_dir` and `output.metrics_subdir`.
 
 ---
 
@@ -80,6 +85,10 @@ All under `local_extraction/runs/Track_C/`:
   - Runtime stats (latency/throughput/VRAM/FLOPs) when instrumentation is on.
 - Summary: `metrics/trackC_val_rateXX_<timestamp>_summary.json`
   - Contains metrics + serialized eval/pruning/instrumentation configs.
+  - Also includes `config_name` and `yaml_config_flat` for portability.
+- Provenance snapshot: `resolved_config.json`
+  - Written into the RunLogger run folder under `local_extraction/runs/Track_C/`.
+  - Captures the fully resolved YAML config used for that invocation.
 - Plots: from `trackC_plots.py` → `plots/trackC_metrics_over_time.png` and TSV summary.
 
 ---
@@ -89,10 +98,20 @@ All under `local_extraction/runs/Track_C/`:
   ```powershell
   python local_extraction\trackC\trackC_pruning.py
   ```
+- Use a specific config preset (default is `trackC`):
+  ```powershell
+  python local_extraction\trackC\trackC_pruning.py --config trackC
+  ```
 - Disable pruning (baseline timing/metrics):
   ```powershell
   # set RuntimeConfig.pruning_enabled = False or rgtp_rate = 0 in file, then run
   python local_extraction\trackC\trackC_pruning.py
+  ```
+- Override pruning rate / checkpoint from CLI:
+  ```powershell
+  python local_extraction\trackC\trackC_pruning.py --rgtp_rate 0.50
+  python local_extraction\trackC\trackC_pruning.py --checkpoint "local_extraction/runs/Track_B/checkpoints/trackB_best.pt"
+  python local_extraction\trackC\trackC_pruning.py --no_pruning
   ```
 - Custom checkpoint/manifest:
   - Set `RuntimeConfig.checkpoint = "local_extraction/runs/Track_B/checkpoints/trackB_best.pt"`

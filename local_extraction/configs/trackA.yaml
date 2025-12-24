@@ -13,29 +13,71 @@ _base_: "base.yaml"
 stage_a:
   # Detection mode: 'yolo' (Ultralytics) or 'oracle' (from ground-truth labels)
   mode: "yolo"
+  # Options:
+  # - "yolo"    # realistic detector noise; best for end-to-end behavior
+  # - "oracle"  # upper bound (uses GT boxes); isolates Stage B quality
   
   # Top-K candidates per image
   k: 6
+  # Options (trade recall vs speed):
+  # - 4   # faster, may miss the true box more often
+  # - 6   # good default balance
+  # - 10  # higher recall, more crops and slower downstream
+  # - 15  # recall-focused sweeps (often diminishing returns)
   
   # Frame selection
   last_frame_only: true
+  # Options:
+  # - true   # only run detection on the last frame of each clip (fast; default)
+  # - false  # run on more frames (only if the runner supports it)
   max_images: null  # null = process all; set integer to cap
+  # Options:
+  # - null  # process all images
+  # - 100   # quick dev run
+  # - 1000  # medium run
   
   # YOLO-specific settings
   yolo:
     weights: "${paths.local_extraction}/toolkit_yolo/runs/sta_yolov8s_singlecls_20251113_002330/weights/best.pt"
+    # Options (examples):
+    # - "${paths.local_extraction}/toolkit_yolo/runs/<run_name>/weights/best.pt"  # a trained checkpoint
+    # - "yolov8s.pt"  # off-the-shelf YOLOv8s (not STA-tuned)
+    # - null  # invalid; weights must point to a real model
     imgsz: 960
+    # Options:
+    # - 640   # faster, less small-object detail
+    # - 960   # better small-object recall, slower
+    # - 1280  # most detail, often heavy/slow
     conf_thresh: 0.05
+    # Options:
+    # - 0.01  # very permissive → more candidates (higher recall, more false positives)
+    # - 0.05  # default balance
+    # - 0.10  # stricter → fewer candidates (faster, lower recall)
+    # - 0.20  # very strict → often misses positives
     nms_iou: 0.45
+    # Options:
+    # - 0.35  # stronger suppression → fewer near-duplicates
+    # - 0.45  # default
+    # - 0.60  # keep more overlapping boxes → higher candidate count
   
   # Oracle mode (uses ground-truth labels)
   oracle:
     label_space: "clips"  # 'clips' or 'videos'
+    # Options:
+    # - "clips"   # labels indexed by clip segments (common in this repo)
+    # - "videos"  # labels indexed by full videos (use only if your labels are organized that way)
   
   # Output options
   output:
     save_per_image_csv: false
+    # Options:
+    # - false  # default (smaller disk usage)
+    # - true   # write per-image CSV for debugging/analysis
     run_prefix: "trackA_stageA"
+    # Options:
+    # - "trackA_stageA"  # default
+    # - "trackA_stageA_debug"  # separate dev runs
+    # - "trackA_stageA_ablation"  # ablation grouping
 
 # -----------------------------------------------------------------------------
 # Stage B: Head/Reasoner Configuration
@@ -43,42 +85,95 @@ stage_a:
 stage_b:
   # Candidates source (null = auto-detect latest Stage A run)
   candidates_source: null
+  # Options:
+  # - null  # auto-detect latest Stage A run
+  # - "${paths.runs_root}/Track_A/<stageA_run_name>"  # pin a specific Stage A run
   
   # Cropping settings
   crop_size: [256, 256]  # [W, H] or null for native size
+  # Options:
+  # - [224, 224]  # smaller, faster; can lose detail
+  # - [256, 256]  # default
+  # - [320, 320]  # more detail, slower
+  # - null        # keep native crop size (varies; can complicate batching)
   keep_top_n: null       # null = keep all candidates
+  # Options:
+  # - null  # keep all Stage A candidates
+  # - 10    # cap per-frame candidates (faster)
+  # - 6     # aligns with Stage A K (common)
+  # - 3     # aggressive pruning (fast, may lose positives)
   
   # Evaluation with ground-truth labels
   eval_with_labels: true
+  # Options:
+  # - true   # compute recall@K / IoU stats against labels (recommended for experiments)
+  # - false  # faster; skips label-based evaluation
   iou_thresh: 0.5
+  # Options:
+  # - 0.3  # lenient match
+  # - 0.5  # standard
+  # - 0.7  # strict match (harder)
   
   # Head manifests
   manifests:
     use_clip_manifest: true
+    # Options:
+    # - true   # use CLIP-augmented manifests if available (often helps semantics)
+    # - false  # use standard manifests (faster, fewer dependencies)
+    # NOTE: If you explicitly set `train`/`val` below, this toggle does not change those paths.
     train: "${paths.manifests_root}/head_train_clip.json"
     val: "${paths.manifests_root}/head_val_clip.json"
   
   # Output options
   output:
     write_head_train_val: true
+    # Options:
+    # - true   # writes head_train/head_val manifests (default)
+    # - false  # skip writing (faster; less reusable)
     write_semantics_in_manifest: true
+    # Options:
+    # - true   # write semantics fields into manifest (default)
+    # - false  # keep manifest minimal
     write_back_to_stagea_summary: true
+    # Options:
+    # - true   # copy key Stage B metrics into Stage A summary (default)
+    # - false  # keep Stage A summary untouched
     run_prefix: "trackA_stageB"
+    # Options:
+    # - "trackA_stageB"  # default
+    # - "trackA_stageB_debug"  # separate dev runs
+    # - "trackA_stageB_ablation"  # ablation grouping
 
 # -----------------------------------------------------------------------------
 # K-Sweep Configuration (for recall optimization)
 # -----------------------------------------------------------------------------
 k_sweep:
   enabled: false
+  # Consumed by: local_extraction/trackA/trackA_stageA/oracle_k_sweep.py
+  # Options:
+  # - true   # run sweep to find recall-vs-K curve
+  # - false  # normal single-K run
   k_values: [4, 6, 8, 10, 12, 15]
+  # Options (examples):
+  # - [2, 4, 6, 8]               # quick sweep
+  # - [4, 6, 8, 10, 12, 15]      # default-like
+  # - [6, 10, 15, 20]            # coarse high-recall sweep
   
 # -----------------------------------------------------------------------------
 # Smoke Test Configuration
 # -----------------------------------------------------------------------------
 smoke_test:
   enabled: false
+  # Consumed by: local_extraction/trackA/trackA_smoke_test.py
   max_samples: 10
+  # Options:
+  # - 3    # minimal check
+  # - 10   # default
+  # - 50   # heavier smoke
   validate_pycache: true
+  # Options:
+  # - true   # fail fast if stale __pycache__ issues exist
+  # - false  # skip that check
   expected_outputs:
     - "candidates.jsonl"
     - "summary.json"

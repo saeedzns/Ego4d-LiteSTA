@@ -6,8 +6,8 @@ This document is intentionally exhaustive (~500 lines) so you can run, audit, an
 
 ## 0. TL;DR Quick Path
 - Prepare inputs: Stage B manifests (`head_train.jsonl`, `head_val.jsonl`) and frames under `local_extraction/v2/extracted_frames/<uid>/`.
-- Train: edit `TrainConfig` in `trackB_train_loader.py`, then run `python local_extraction/trackB/trackB_train_loader.py`.
-- Eval: edit `EvalConfig` in `trackB_eval.py`, then run `python local_extraction/trackB/trackB_eval.py`.
+- Train: edit `local_extraction/configs/trackB*.yaml` (or pass `--config <preset>`), then run `python local_extraction/trackB/trackB_train_loader.py`.
+- Eval: use `python local_extraction/trackB/trackB_eval.py --config <preset>` so eval uses the same preset as training.
 - Outputs: checkpoints in `runs/Track_B/checkpoints/`, metrics/preds/overlays in `runs/Track_B/{metrics,predictions,overlays/val}`; plots in `runs/Track_B/plots/`.
 - Multi-task (noun/verb/TTC-bin) is controlled by `use_multi_task_labels` / `use_ttc_bins` in `TrainConfig`; hotspot/CLIP are eval-time only.
 
@@ -181,7 +181,11 @@ This document is intentionally exhaustive (~500 lines) so you can run, audit, an
      - `metrics/metrics_val_<ts>_summary.json` (metrics + eval config).
      - Predictions CSV/JSONL under `predictions/`.
      - Overlays under `overlays/val/`.
-- CLI overrides: `--checkpoint`, `--val_manifest`, `--stageB_run`, `--ttc_mode`.
+- CLI overrides: `--config`, `--checkpoint`, `--val_manifest`, `--stageB_run`, `--ttc_mode`, `--hotspot`, `--clip`.
+
+Provenance:
+- Each eval run writes `resolved_config.json` into its RunLogger run folder under `local_extraction/runs/Track_B/`.
+- Each training checkpoint stores the full resolved YAML snapshot (`config_name`, `yaml_config`, `yaml_config_flat`) in the `.pt` payload.
 
 ---
 

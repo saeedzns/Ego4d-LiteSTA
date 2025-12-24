@@ -7,22 +7,57 @@
 _base_: "base.yaml"
 
 # -----------------------------------------------------------------------------
+# Model Configuration
+# -----------------------------------------------------------------------------
+# Track C uses the same model architecture as Track B
+model:
+  fusion:
+    layers: 4  # Must match the Track B checkpoint being evaluated
+    # Options:
+    # - 2  # if checkpoint was trained with 2 layers
+    # - 4  # if checkpoint was trained with 4 layers (default for newer checkpoints)
+    # - 6  # if checkpoint was trained with 6 layers
+
+# -----------------------------------------------------------------------------
 # RGTP (Rollout-Guided Token Pruning) Configuration
 # -----------------------------------------------------------------------------
 rgtp:
   enabled: true
+  # Options:
+  # - true   # enable pruning
+  # - false  # baseline (no pruning)
   
   # Pruning rate: fraction of tokens to drop (0.0 = no pruning, 0.5 = drop 50%)
   rate: 0.1
+  # Options (Pareto curve knob):
+  # - 0.0  # baseline Track B inference
+  # - 0.1  # light pruning (small speedup)
+  # - 0.3  # moderate pruning
+  # - 0.5  # aggressive pruning
   
   # Minimum tokens to keep (safety floor)
   min_keep: 2
+  # Options:
+  # - 1   # fastest but risky
+  # - 2   # default safety
+  # - 4   # more robust accuracy
+  # - 8   # very conservative
   
   # Temporal decay for rollout vs motion blending
   temporal_decay: 0.6
+  # Options:
+  # - 0.2  # mostly motion-driven (can be noisy)
+  # - 0.6  # balanced default
+  # - 0.8  # mostly rollout-driven
+  # - 1.0  # rollout-only
   
   # Logit fill for pruned tokens (very negative -> low probability)
   logit_fill: -12.0
+  # Options:
+  # - -6.0   # less strict (not recommended)
+  # - -12.0  # default
+  # - -20.0  # very strict (pruned almost never win)
+  # - -40.0  # extreme (can be numerically harsh)
 
 # -----------------------------------------------------------------------------
 # Evaluation Configuration
@@ -30,59 +65,176 @@ rgtp:
 evaluation:
   # Checkpoint to evaluate (null = auto-detect latest)
   checkpoint: null
+  # Options:
+  # - null  # auto-detect latest Track B checkpoint
+  # - "${paths.runs_root}/Track_B/<run_name>/checkpoints/best.pt"  # pin a specific checkpoint
+  # - "${paths.runs_root}/Track_B/<run_name>/checkpoints/epoch_20.pt"  # pin a specific epoch
   
   # Stage B run for candidates (null = auto-detect)
   stageB_run: null
+  # Options:
+  # - null  # auto-detect latest Track A Stage B run
+  # - "${paths.runs_root}/Track_A/<stageB_run_name>"  # pin a specific Stage B run
   
   # Val manifest (null = auto-detect)
   val_manifest: null
+  # Options:
+  # - null  # auto-detect (recommended)
+  # - "${paths.manifests_root}/head_val_clip.json"  # explicit manifest path
+  # - "${paths.manifests_root}/head_val.json"  # non-CLIP variant
   
   # Batch settings
   batch_size: 1  # RGTP typically runs bs=1 for streaming
+  # Options:
+  # - 1   # typical pruning/streaming
+  # - 2   # small throughput boost (if VRAM allows)
+  # - 4   # faster on GPU, less realistic latency
+  # - 8   # throughput benchmarking only
   candidate_limit: 16
+  # Options:
+  # - 8   # faster, lower recall
+  # - 16  # default
+  # - 32  # higher recall, slower
   normalize_ttc: true
+  # Options:
+  # - true   # normalize TTC (recommended)
+  # - false  # keep raw TTC
+  
+  # Hotspot priors (PEAR-style)
+  hotspot_priors:
+    enabled: false
+    # Options:
+    # - true   # use hotspot priors
+    # - false  # disable (default)
+    path: "${paths.local_extraction}/${version}/hotspot_priors_train_logodds_min10.json"
+    # Options:
+    # - "${paths.local_extraction}/${version}/hotspot_priors_train_logodds_min10.json"  # default
+    # - null  # disable file loading
+    alpha: 0.3
+    # Options:
+    # - 0.3  # default blend (30% prior, 70% model)
+    # - 0.6  # strong prior influence
+    # - 0.9  # nearly prior-dominated
+  
+  # CLIP re-ranking (match Track B for fair comparison)
+  clip_rerank:
+    enabled: false
+    # Options:
+    # - true   # use CLIP (enable for fair comparison with Track B)
+    # - false  # disable (default for baseline)
+    model: "ViT-L/14"
+    # Options:
+    # - "ViT-B/32"  # faster but less accurate
+    # - "ViT-L/14"  # stronger, matches Track B default
+    # - "RN50"      # alternate backbone
+    weight: 0.3
+    # Options:
+    # - 0.0  # no CLIP influence
+    # - 0.3  # default (30% CLIP, 70% model)
+    # - 0.6  # strong CLIP influence
 
 # -----------------------------------------------------------------------------
 # Instrumentation (Latency/VRAM/FLOPs Profiling)
 # -----------------------------------------------------------------------------
 instrumentation:
   enabled: true
+  # Options:
+  # - true   # collect profiling metrics (default)
+  # - false  # fastest evaluation (no profiling)
   
   # What to measure
   record_latency: true
   record_vram: true
   record_flops: true
+  # Options:
+  # - (all true)   # full profiling
+  # - latency only # set vram/flops false for faster runs
+  # - vram only    # useful when tuning VRAM
+  # - all false    # fastest evaluation (no profiling)
   
   # CUDA events for precise timing
   use_cuda_events: true
+  # Options:
+  # - true   # best timing precision on CUDA
+  # - false  # fallback timing (less precise)
   
   # Benchmark settings
   warmup_iters: 1
+  # Options:
+  # - 0  # no warmup (noisier timings)
+  # - 1  # default
+  # - 5  # stabler timings
   bench_iters: 5
+  # Options:
+  # - 1   # very quick
+  # - 5   # default
+  # - 20  # stable micro-bench mean
   bench_samples: 1
+  # Options:
+  # - 0  # skip micro-benchmark
+  # - 1  # default
+  # - 5  # average across several samples
+
+  # Aliases:
+  # - The runner accepts both `record_*` and `measure_*` keys.
+  # - Warmup can be set via `warmup_iters` or `bench_warmup`.
 
 # -----------------------------------------------------------------------------
 # Rate Sweep (for Pareto curves)
 # -----------------------------------------------------------------------------
 rate_sweep:
-  enabled: True
+  # NOTE: This used to be unwired; now it is wired. Keep it off by default.
+  enabled: false
+  # Options:
+  # - true   # evaluate multiple prune rates (Pareto curve)
+  # - false  # single-rate evaluation (default)
   rates: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
+  # Options (examples):
+  # - [0.0, 0.1, 0.3, 0.5]  # quick sweep
+  # - [0.0, 0.05, 0.1, 0.2]  # fine low-rate sweep
+  # - [0.3, 0.4, 0.5, 0.6]  # aggressive sweep
 
 # -----------------------------------------------------------------------------
 # Output Configuration
 # -----------------------------------------------------------------------------
 output:
   runs_dir: "${paths.runs_root}/Track_C"
+  # Options:
+  # - "${paths.runs_root}/Track_C"  # default
+  # - "${paths.runs_root}/Track_C_debug"  # separate dev runs
+  # - "${paths.local_extraction}/runs/Track_C"  # explicit (same as default)
   metrics_subdir: "metrics"
+  # Options:
+  # - "metrics"   # default
+  # - "metrics_fast"  # for smoke/sanity runs
+  # - "metrics_ablation"  # for ablation grouping
   plots_subdir: "plots"
+  # Options:
+  # - "plots"  # default
+  # - "plots_fast"  # smoke runs
+  # - "plots_ablation"  # ablations
 
 # -----------------------------------------------------------------------------
 # Smoke Test Configuration
 # -----------------------------------------------------------------------------
 smoke_test:
   enabled: false
+  # Options:
+  # - true   # run a tiny subset + basic output validation
+  # - false  # normal evaluation
   max_samples: 5
+  # Options:
+  # - 1   # minimal check
+  # - 5   # default
+  # - 20  # heavier smoke
   validate_pycache: true
+  # Options:
+  # - true   # fail fast if stale __pycache__ issues exist
+  # - false  # skip that check
   test_rates: [0.0, 0.3]
+  # Options (examples):
+  # - [0.0]       # baseline only
+  # - [0.0, 0.3]  # default
+  # - [0.1, 0.3, 0.5]  # broader smoke
   expected_outputs:
     - "metrics/"

@@ -72,6 +72,10 @@ class TokenizerConfig:
     """
     # Video backbone selection
     video_backbone: str = field(default_factory=lambda: get_tokenizer_config().get('model.tokenizer.video_backbone', 'resnet18') if get_tokenizer_config() else 'resnet18')
+
+    # ResNet18-specific settings
+    resnet_pretrained: bool = field(default_factory=lambda: get_tokenizer_config().get('model.tokenizer.pretrained', True) if get_tokenizer_config() else True)
+    freeze_backbone: bool = field(default_factory=lambda: get_tokenizer_config().get('model.tokenizer.freeze_backbone', True) if get_tokenizer_config() else True)
     
     # Image settings
     img_size: int = field(default_factory=lambda: get_tokenizer_config().get('model.tokenizer.img_size', 224) if get_tokenizer_config() else 224)
@@ -106,7 +110,7 @@ class TokenizerConfig:
 
 class ResNet18Backbone(nn.Module):
     """ResNet18 up to layer4 returning a feature map (B, C, Hf, Wf)."""
-    def __init__(self, pretrained: bool = True):
+    def __init__(self, pretrained: bool = True, freeze: bool = True):
         super().__init__()
         import torchvision.models as models
         try:
@@ -119,9 +123,8 @@ class ResNet18Backbone(nn.Module):
         self.layer3 = m.layer3
         self.layer4 = m.layer4
 
-        # Freeze by default for feature extraction
         for p in self.parameters():
-            p.requires_grad_(False)
+            p.requires_grad_(not freeze)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.stem(x)
@@ -245,11 +248,11 @@ def build_backbone(cfg: TokenizerConfig) -> nn.Module:
         except Exception as e:
             print(f"[Tokenizer] ⚠️ VideoMAE build failed: {e}")
             print(f"[Tokenizer] Falling back to ResNet18...")
-            model = ResNet18Backbone(pretrained=True).to(device).eval()
+            model = ResNet18Backbone(pretrained=cfg.resnet_pretrained, freeze=cfg.freeze_backbone).to(device).eval()
     else:
         # Default: ResNet18
         print(f"[Tokenizer] Building ResNet18 backbone")
-        model = ResNet18Backbone(pretrained=True).to(device).eval()
+        model = ResNet18Backbone(pretrained=cfg.resnet_pretrained, freeze=cfg.freeze_backbone).to(device).eval()
     
     return model
 

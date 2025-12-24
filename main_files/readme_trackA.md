@@ -66,6 +66,13 @@ This chapter documents Track A of the Ego4D-LiteSTA pipeline as both a theoretic
   .\local_extraction\.venv\Scripts\Activate.ps1
   ```
 
+### 3.1 Configuration Wiring Notes (What YAML Actually Controls)
+- The Track A runners load config from `local_extraction/configs/trackA.yaml` via `core.load_config('trackA')`.
+- Dedicated YAML blocks:
+  - `k_sweep.*` is consumed by `local_extraction/trackA/trackA_stageA/oracle_k_sweep.py`.
+  - `smoke_test.*` is consumed by `local_extraction/trackA/trackA_smoke_test.py`.
+- Full per-key explanation (with numeric tables): see `local_extraction/trackA/trackA_config_effects.md`.
+
 ## 4. Conceptual View of Track A
 - Track A is a two-stage filter:
   - **Stage A:** Generate spatial proposals per frame using either YOLO inference or oracle labels. Choices here control recall and noise.
@@ -327,6 +334,7 @@ This chapter documents Track A of the Ego4D-LiteSTA pipeline as both a theoretic
   - Stage B run prefix can mirror Stage A to pair results easily, e.g., `trackA_stageB_oracle_K5_2025-11-26`.
 - Provenance tracking:
   - `summary.json` in both stages captures configuration snapshots; Stage B also embeds detector config when available.
+  - Each run folder also writes `resolved_config.json` (full resolved YAML snapshot) so old runs remain auditable even if YAML files change later.
   - Recall metrics can be mirrored back to Stage A summary to keep a single source of truth per detector run.
 - Logging helper:
   - Both stages attempt to use `core.RunLogger` to write configs, metrics, and artifacts. If unavailable, runs still succeed and print a warning.

@@ -106,6 +106,11 @@ This chapter presents Track B as a self-contained unit for a thesis: conceptual 
   - VideoMAE Ego: `local_extraction/configs/trackB_videomae_ego.yaml`  
 - Tokens (optional speedup): `tokens_root` pointing to pre-extracted ResNet18 or VideoMAE tokens.  
 
+### 4.1 Configuration Wiring Notes (What YAML Actually Controls)
+- Track B scripts load configs from `local_extraction/configs/trackB*.yaml` via the repo config loader.
+- Not every key that exists in YAML necessarily affects behavior if the code does not read it; the project documents this explicitly as **wired vs unwired**.
+- Full key-by-key explanation (including “wired / not wired” notes and numeric examples): see `local_extraction/trackB/trackB_config_effects.md`.
+
 ---
 
 ## 5. Input Manifests (from Track A Stage B)
@@ -431,8 +436,8 @@ This chapter presents Track B as a self-contained unit for a thesis: conceptual 
 ## 30. Reproducibility and Logging (RunLogger, Config Snapshots)
 - RunLogger: both train and eval attempt to log configs, metrics, artifacts; failures are non-fatal.  
 - Config provenance:  
-  - Train: `_config_to_dict` snapshot embedded in checkpoints and best summaries.  
-  - Eval: EvalConfig serialized into `_summary.json`.  
+  - Train: checkpoints embed both a simplified `train_config` and the full resolved YAML snapshot (`config_name`, `yaml_config`, `yaml_config_flat`).  
+  - Eval: supports `--config <preset>`; each eval run also writes `resolved_config.json` in the RunLogger run folder under `local_extraction/runs/Track_B/`.  
 - Naming: include mode/backbone/priors in run notes for clarity.  
 - Artifact retention: keep `trackB_best.pt`, associated summary JSON, and metrics/predictions for thesis figures.  
 

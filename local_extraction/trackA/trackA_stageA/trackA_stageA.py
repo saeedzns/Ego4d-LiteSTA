@@ -338,6 +338,8 @@ def main() -> int:
         "file_prefix": FILE_PREFIX,
         "run_stamp": RUN_STAMP,
         "script_path": str(Path(__file__).resolve()),
+        "config_name": "trackA",
+        "yaml_config_flat": _cfg.flat(),
     }
     # Persist YOLO-related config when using YOLO mode
     if DETECTION_MODE.lower() == "yolo":
@@ -348,6 +350,22 @@ def main() -> int:
             "nms_iou": float(YOLO_IOU),
             "loaded_once": bool(_YOLO_MODEL is not None),
         }
+    # Save full resolved config snapshot alongside summary for provenance
+    try:
+        (RUN_DIR / "resolved_config.json").write_text(
+            json.dumps(
+                {
+                    'config_name': 'trackA',
+                    'config_resolved': _cfg.to_dict(),
+                    'config_flat': _cfg.flat(),
+                },
+                indent=2,
+                default=str,
+            ),
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
     (RUN_DIR / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     # Avoid non-ASCII arrows for Windows console compatibility
     print("[stageA] Summary ->", RUN_DIR / "summary.json")
@@ -362,7 +380,11 @@ def main() -> int:
             'avg_boxes_per_image': summary['avg_boxes_per_image'],
             'duration_sec': summary['duration_sec'],
         })
-        run_logger.log_artifacts([str(RUN_DIR / "candidates.jsonl"), str(RUN_DIR / "summary.json")])
+        run_logger.log_artifacts([
+            str(RUN_DIR / "candidates.jsonl"),
+            str(RUN_DIR / "summary.json"),
+            str(RUN_DIR / "resolved_config.json"),
+        ])
         run_logger.log_end(success=True)
         run_logger.print_summary()
     except Exception as e:

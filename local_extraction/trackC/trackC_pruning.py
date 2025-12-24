@@ -62,7 +62,8 @@ def _parse_args():
                         help='Enable/disable hotspot priors (overrides config)')
     parser.add_argument('--clip', type=str, default=None, choices=['on', 'off'],
                         help='Enable/disable CLIP re-ranking (overrides config)')
-    return parser.parse_args()
+    args, _unknown = parser.parse_known_args()
+    return args
 
 # Parse args before loading config
 _cli_args = _parse_args()
@@ -89,6 +90,34 @@ _cfg = load_config(_config_name)
 _video_backbone = _cli_args.video_backbone or _cfg.get('model.tokenizer.video_backbone', 'resnet18')
 print(f"[TrackC] Video backbone: {_video_backbone}")
 # =========================================================
+
+
+_MISSING = object()
+
+
+def _cfg_get_any(keys: List[str], default: Any) -> Any:
+    """Return the first present config value among keys.
+
+    Distinguishes between "missing" and "present but null" by using a sentinel.
+    """
+    for k in keys:
+        v = _cfg.get(k, _MISSING)
+        if v is not _MISSING:
+            return v
+    return default
+
+
+def _cfg_get_bool_any(keys: List[str], default: bool) -> bool:
+    v = _cfg_get_any(keys, default)
+    return bool(v)
+
+
+def _cfg_get_int_any(keys: List[str], default: int) -> int:
+    v = _cfg_get_any(keys, default)
+    try:
+        return int(v)
+    except Exception:
+        return int(default)
 
 # Ensure Track B modules are importable when running directly
 TRACKB_DIR = _LOCAL_EXTRACTION / "trackB"
@@ -133,9 +162,16 @@ class EvalConfig:
     val_manifest: Optional[Path] = Path(_cfg.get('evaluation.val_manifest')) if _cfg.get('evaluation.val_manifest') else None
     stageB_run: Optional[Path] = Path(_cfg.get('evaluation.stageB_run')) if _cfg.get('evaluation.stageB_run') else None
     batch_size: int = _cfg.get('evaluation.batch_size', 1)
-    candidate_limit: int = _cfg.get('training.candidate_limit', 16)
-    normalize_ttc: bool = _cfg.get('training.normalize_ttc', True)
+    # Backward-compatible wiring: prefer evaluation.* (trackC.yaml), fall back to legacy training.*
+    candidate_limit: int = _cfg_get_int_any(['evaluation.candidate_limit', 'training.candidate_limit'], 16)
+    normalize_ttc: bool = _cfg_get_bool_any(['evaluation.normalize_ttc', 'training.normalize_ttc'], True)
     num_workers: int = _cfg.get('runtime.num_workers', 0)
+    # Smoke test (optional): cap number of samples evaluated
+    max_samples: Optional[int] = (
+        _cfg_get_int_any(['smoke_test.max_samples'], 0)
+        if _cfg_get_bool_any(['smoke_test.enabled'], False)
+        else None
+    )
     # Pre-extracted tokens (for faster VideoMAE inference)
     tokens_root: Optional[Path] = Path(_cfg.get('data.tokens_root')) if _cfg.get('data.tokens_root') else None
     # Hotspot priors
@@ -178,12 +214,14 @@ class RuntimeConfig:
     min_keep: int = _cfg.get('rgtp.min_keep', 2)
 
     # Instrumentation toggles
-    measure_latency: bool = _cfg.get('instrumentation.measure_latency', True)
-    measure_vram: bool = _cfg.get('instrumentation.measure_vram', True)
-    measure_flops: bool = _cfg.get('instrumentation.measure_flops', True)
-    bench_warmup: int = _cfg.get('instrumentation.bench_warmup', 1)
-    bench_iters: int = _cfg.get('instrumentation.bench_iters', 5)
-    bench_samples: int = 1                # number of samples to micro-benchmark
+    instrumentation_enabled: bool = _cfg_get_bool_any(['instrumentation.enabled'], True)
+    measure_latency: bool = _cfg_get_bool_any(['instrumentation.measure_latency', 'instrumentation.record_latency'], True)
+    measure_vram: bool = _cfg_get_bool_any(['instrumentation.measure_vram', 'instrumentation.record_vram'], True)
+    measure_flops: bool = _cfg_get_bool_any(['instrumentation.measure_flops', 'instrumentation.record_flops'], True)
+    use_cuda_events: bool = _cfg_get_bool_any(['instrumentation.use_cuda_events'], True)
+    bench_warmup: int = _cfg_get_int_any(['instrumentation.bench_warmup', 'instrumentation.warmup_iters'], 1)
+    bench_iters: int = _cfg_get_int_any(['instrumentation.bench_iters'], 5)
+    bench_samples: int = _cfg_get_int_any(['instrumentation.bench_samples'], 1)  # micro-benchmark samples
 
 
 @dataclass
@@ -727,6 +765,8 @@ def evaluate(cfg: EvalConfig, rgtp_cfg: RGTPConfig, instr_cfg: Optional[Instrume
                 continue
             for sample in batch['samples']:
                 total_samples += 1
+                if cfg.max_samples is not None and total_samples > int(cfg.max_samples):
+                    break
                 if not sample['bboxes']:
                     empty_candidates += 1
                     continue
@@ -1092,6 +1132,9 @@ def evaluate(cfg: EvalConfig, rgtp_cfg: RGTPConfig, instr_cfg: Optional[Instrume
                             if hit_All:
                                 n_correct_All_top5 += 1
 
+            if cfg.max_samples is not None and total_samples > int(cfg.max_samples):
+                break
+
     if not logits_list:
         raise RuntimeError("No valid samples were processed during Track C evaluation.")
 
@@ -1192,7 +1235,9 @@ def evaluate(cfg: EvalConfig, rgtp_cfg: RGTPConfig, instr_cfg: Optional[Instrume
 
 
 def _save_metrics(metrics: Dict[str, Any], eval_cfg: EvalConfig, rgtp_cfg: RGTPConfig, instr_cfg: Optional[InstrumentationConfig]) -> Path:
-    out_dir = Path('local_extraction') / 'runs' / 'Track_C' / 'metrics'
+    runs_dir = _cfg_get_any(['output.runs_dir'], str(Path('local_extraction') / 'runs' / 'Track_C'))
+    metrics_subdir = _cfg_get_any(['output.metrics_subdir'], 'metrics')
+    out_dir = Path(str(runs_dir)) / str(metrics_subdir)
     out_dir.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime('%Y%m%d_%H%M%S')
     rate = metrics.get('rgtp_rate_request', 0.0)
@@ -1204,6 +1249,8 @@ def _save_metrics(metrics: Dict[str, Any], eval_cfg: EvalConfig, rgtp_cfg: RGTPC
         "eval_config": _serialize_cfg(eval_cfg),
         "rgtp_config": _serialize_cfg(rgtp_cfg),
         "instrumentation": _serialize_cfg(instr_cfg),
+        "config_name": _config_name,
+        "yaml_config_flat": _cfg.flat(),
     }
     summary_path = out_dir / f"trackC_val_rate{int(rate * 100):02d}_{ts}_summary.json"
     try:
@@ -1256,49 +1303,97 @@ def main() -> None:
         eval_cfg.use_clip_rerank = (_cli_args.clip == 'on')
         print(f"[trackC] CLI override: clip_rerank = {eval_cfg.use_clip_rerank}")
 
-    rgtp_cfg = RGTPConfig(
-        enabled=runtime_cfg.pruning_enabled and runtime_cfg.rgtp_rate > 0,
-        rate=max(0.0, min(0.95, runtime_cfg.rgtp_rate)),
-        min_keep=max(1, runtime_cfg.min_keep),
+    smoke_enabled = _cfg_get_bool_any(['smoke_test.enabled'], False)
+    rate_sweep_enabled = _cfg_get_bool_any(['rate_sweep.enabled'], False)
+
+    # Determine which pruning rates to run.
+    # Precedence: CLI rgtp_rate/no_pruning > smoke_test.test_rates > rate_sweep.rates > runtime_cfg.rgtp_rate.
+    if _cli_args.no_pruning:
+        rates_to_run = [0.0]
+    elif _cli_args.rgtp_rate is not None:
+        rates_to_run = [float(_cli_args.rgtp_rate)]
+    elif smoke_enabled:
+        rates_to_run = list(_cfg_get_any(['smoke_test.test_rates'], [0.0, 0.3]))
+    elif rate_sweep_enabled:
+        rates_to_run = list(_cfg_get_any(['rate_sweep.rates'], [0.0, 0.1, 0.2, 0.3, 0.4, 0.5]))
+    else:
+        rates_to_run = [float(runtime_cfg.rgtp_rate)]
+
+    instr_enabled = runtime_cfg.instrumentation_enabled and (
+        runtime_cfg.measure_latency or runtime_cfg.measure_vram or runtime_cfg.measure_flops
     )
     instr_cfg = InstrumentationConfig(
-        enabled=runtime_cfg.measure_latency or runtime_cfg.measure_vram or runtime_cfg.measure_flops,
-        record_vram=runtime_cfg.measure_vram,
-        record_flops=runtime_cfg.measure_flops,
-        bench_warmup=max(0, runtime_cfg.bench_warmup),
-        bench_iters=max(0, runtime_cfg.bench_iters),
-        bench_samples=max(0, runtime_cfg.bench_samples),
+        enabled=bool(instr_enabled),
+        record_vram=bool(runtime_cfg.measure_vram),
+        record_flops=bool(runtime_cfg.measure_flops),
+        use_cuda_events=bool(runtime_cfg.use_cuda_events),
+        bench_warmup=max(0, int(runtime_cfg.bench_warmup)),
+        bench_iters=max(0, int(runtime_cfg.bench_iters)),
+        bench_samples=max(0, int(runtime_cfg.bench_samples)),
     )
 
     torch.set_grad_enabled(False)
-    metrics = evaluate(eval_cfg, rgtp_cfg, instr_cfg)
-    out_path = _save_metrics(metrics, eval_cfg, rgtp_cfg, instr_cfg)
 
-    print("\n[trackC] Metrics:")
-    for k in ['accuracy', 'mAP', 'ttc_mae_seconds', 'num_candidates', 'rgtp_mean_fraction_pruned']:
-        if k in metrics:
-            print(f"  {k}: {metrics[k]}")
-    print(f"[trackC] metrics saved to {out_path}")
-    
-    # Log run using RunLogger
+    out_paths: List[Path] = []
+    last_metrics: Optional[Dict[str, Any]] = None
+
+    for rate in rates_to_run:
+        rgtp_cfg = RGTPConfig(
+            enabled=bool(runtime_cfg.pruning_enabled) and float(rate) > 0.0,
+            rate=max(0.0, min(0.95, float(rate))),
+            min_keep=max(1, int(runtime_cfg.min_keep)),
+        )
+        print(f"\n[trackC] Running rate={rgtp_cfg.rate:.2f} (enabled={rgtp_cfg.enabled})")
+        metrics = evaluate(eval_cfg, rgtp_cfg, instr_cfg)
+        out_path = _save_metrics(metrics, eval_cfg, rgtp_cfg, instr_cfg)
+        out_paths.append(out_path)
+        last_metrics = metrics
+
+        print("[trackC] Metrics:")
+        for k in ['accuracy', 'mAP', 'ttc_mae_seconds', 'num_candidates', 'rgtp_mean_fraction_pruned']:
+            if k in metrics:
+                print(f"  {k}: {metrics[k]}")
+        print(f"[trackC] metrics saved to {out_path}")
+
+    # Log run using RunLogger (one log per invocation, attach all artifacts)
     try:
         from core import RunLogger
-        run_dir = Path("local_extraction") / "runs" / "Track_C"
-        run_logger = RunLogger(track='trackC', run_dir=run_dir)
+        run_logger = RunLogger(track='trackC')
+        resolved_cfg_path = run_logger.run_dir / "resolved_config.json"
+        try:
+            resolved_cfg_path.write_text(
+                json.dumps(
+                    {
+                        'config_name': _config_name,
+                        'config_resolved': _cfg.to_dict(),
+                        'config_flat': _cfg.flat(),
+                    },
+                    indent=2,
+                    default=str,
+                ),
+                encoding='utf-8',
+            )
+        except Exception:
+            pass
+        # asdict(eval_cfg) contains Path values; keep as-is for existing logger behavior
         run_logger.log_config({
+            'config_name': _config_name,
             'eval_config': asdict(eval_cfg),
-            'rgtp_config': asdict(rgtp_cfg),
+            'rates_to_run': rates_to_run,
             'instrumentation_config': asdict(instr_cfg),
             'runtime_config': {
                 'checkpoint': runtime_cfg.checkpoint,
                 'pruning_enabled': runtime_cfg.pruning_enabled,
-                'rgtp_rate': runtime_cfg.rgtp_rate,
+                'base_rgtp_rate': runtime_cfg.rgtp_rate,
                 'use_hotspot': eval_cfg.use_hotspot_priors,
                 'use_clip': eval_cfg.use_clip_rerank,
+                'smoke_test_enabled': smoke_enabled,
+                'rate_sweep_enabled': rate_sweep_enabled,
             }
         })
-        run_logger.log_metrics(metrics)
-        run_logger.log_artifacts([str(out_path)])
+        if last_metrics is not None:
+            run_logger.log_metrics(last_metrics)
+        run_logger.log_artifacts([str(p) for p in out_paths] + [str(resolved_cfg_path)])
         run_logger.log_end(success=True)
         run_logger.print_summary()
     except Exception as e:

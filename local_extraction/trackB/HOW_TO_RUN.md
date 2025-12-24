@@ -106,6 +106,17 @@ python local_extraction/trackB/trackB_eval.py
 
 This auto-detects `trackB_best.pt` or the latest `trackB_final_*.pt`.
 
+### Evaluate with a Specific Config Preset (Recommended)
+Use the same preset you used for training, so tokenizer/backbone settings match:
+
+```powershell
+# ResNet18 baseline
+python local_extraction/trackB/trackB_eval.py --config trackB_resnet18_baseline
+
+# VideoMAE backbone preset
+python local_extraction/trackB/trackB_eval.py --config trackB_videomae_ego
+```
+
 ### Evaluate Specific Checkpoint
 Evaluate a specific checkpoint:
 
@@ -139,6 +150,11 @@ local_extraction/runs/Track_B/metrics/
                           #   - N_mAP, Nv_mAP, N_delta_mAP, All_mAP
                           #   - Top-5 metrics
 ```
+
+### Provenance (Re-run / Audit)
+- Each Track B **train** checkpoint (`.pt`) stores the full resolved YAML snapshot (`config_name`, `yaml_config`, `yaml_config_flat`).
+- Each Track B **eval** run writes `resolved_config.json` inside the RunLogger run folder under `local_extraction/runs/Track_B/`.
+- If you later edit YAML files, use these snapshots to see exactly what was used for a past run.
 
 ---
 
@@ -180,11 +196,12 @@ options:
 
 ### trackB_eval.py
 ```
-usage: trackB_eval.py [-h] [--checkpoint CHECKPOINT] [--val_manifest VAL_MANIFEST]
-                      [--stageB_run STAGEB_RUN] [--ttc_mode {reg,binned}]
-                      [--hotspot {on,off}] [--clip {on,off}]
+usage: trackB_eval.py [-h] [--config CONFIG] [--checkpoint CHECKPOINT]
+                      [--val_manifest VAL_MANIFEST] [--stageB_run STAGEB_RUN]
+                      [--ttc_mode {reg,binned}] [--hotspot {on,off}] [--clip {on,off}]
 
 options:
+  --config CONFIG           Config name: trackB, trackB_resnet18_baseline, trackB_videomae_ego
   --checkpoint CHECKPOINT   Checkpoint path (default: auto-detect best/final)
   --val_manifest VAL_MANIFEST
                             Explicit validation manifest path

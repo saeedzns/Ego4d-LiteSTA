@@ -68,6 +68,7 @@ python local_extraction/trackA/trackA_stageA/trackA_stageA.py
 local_extraction/runs/Track_A/trackA_stageA_<timestamp>/
 ├── candidates.jsonl    # One JSON line per image with bounding boxes
 ├── summary.json        # Run statistics and configuration
+├── resolved_config.json # Full resolved YAML snapshot (for provenance)
 └── candidates/         # Per-image CSVs (if save_per_image_csv: true)
 ```
 
@@ -109,8 +110,13 @@ local_extraction/runs/Track_A/trackA_stageB_<timestamp>/
 ├── manifest.jsonl      # Per-crop metadata (JSONL format)
 ├── head_train.jsonl    # Merged head manifest for training
 ├── head_val.jsonl      # Merged head manifest for validation
-└── summary.json        # Run statistics with recall metrics
+├── summary.json        # Run statistics with recall metrics
+└── resolved_config.json # Full resolved YAML snapshot (for provenance)
 ```
+
+### Provenance (Re-run / Audit)
+- Each Stage A / Stage B run folder includes `resolved_config.json`, which captures the fully resolved config used at runtime.
+- This is helpful if you later edit YAML files and want to know exactly which settings produced an older `summary.json` / manifest set.
 
 ---
 

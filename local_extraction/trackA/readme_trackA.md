@@ -66,6 +66,19 @@ This chapter documents Track A of the Ego4D-LiteSTA pipeline as both a theoretic
   .\local_extraction\.venv\Scripts\Activate.ps1
   ```
 
+### 3.1 Configuration Wiring Notes (What YAML Actually Controls)
+- The Track A runners (`trackA_stageA.py`, `trackA_stageB.py`) load configuration from `local_extraction/configs/trackA.yaml` via `core.load_config('trackA')`.
+- Environment variables still override YAML for quick experiments:
+  - Stage A: `STAGEA_MODE`, `STAGEA_K`, `STAGEA_MAX_IMAGES`, `STAGEA_DEMO_MODE`, `STAGEA_DEMO_N`
+  - Stage B: `STAGEB_MAX_IMAGES` (added for smoke tests)
+- YAML blocks that are *consumed by dedicated runners* (not by Stage A/B directly):
+  - `k_sweep.*` is consumed by `local_extraction/trackA/trackA_stageA/oracle_k_sweep.py` (reads `k_sweep.k_values`).
+  - `smoke_test.*` is consumed by `local_extraction/trackA/trackA_smoke_test.py`.
+- Manifest toggle subtlety:
+  - `stage_b.manifests.use_clip_manifest` only affects the *auto-selected* default manifest filename.
+  - If you set `stage_b.manifests.train` / `stage_b.manifests.val` explicitly (as in the default YAML), toggling `use_clip_manifest` will not change those explicit paths.
+- Full per-key explanation (with tables): see `local_extraction/trackA/trackA_config_effects.md`.
+
 ## 4. Conceptual View of Track A
 - Track A is a two-stage filter:
   - **Stage A:** Generate spatial proposals per frame using either YOLO inference or oracle labels. Choices here control recall and noise.
@@ -327,6 +340,7 @@ This chapter documents Track A of the Ego4D-LiteSTA pipeline as both a theoretic
   - Stage B run prefix can mirror Stage A to pair results easily, e.g., `trackA_stageB_oracle_K5_2025-11-26`.
 - Provenance tracking:
   - `summary.json` in both stages captures configuration snapshots; Stage B also embeds detector config when available.
+  - Each run folder also writes `resolved_config.json` (full resolved YAML snapshot) so old runs remain auditable even if YAML files change later.
   - Recall metrics can be mirrored back to Stage A summary to keep a single source of truth per detector run.
 - Logging helper:
   - Both stages attempt to use `core.RunLogger` to write configs, metrics, and artifacts. If unavailable, runs still succeed and print a warning.

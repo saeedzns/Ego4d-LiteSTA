@@ -123,7 +123,23 @@ This chapter documents Track C as a thesis-ready narrative and lab manual. It fo
 - Instrumentation:
   - `instrumentation.record_latency/vram/flops`, `use_cuda_events`, `warmup_iters`, `bench_iters`, `bench_samples`.
 - Rate sweep:
-  - `rate_sweep.enabled`, `rate_sweep.rates` for scripted sweeps (not implemented in main script by default).
+  - `rate_sweep.enabled`, `rate_sweep.rates` to run a multi-rate evaluation loop (opt-in; defaults off).
+
+### 7.1 Configuration Wiring Notes (Safe, Backward-Compatible Aliases)
+- Evaluation keys:
+  - `evaluation.candidate_limit` and `evaluation.normalize_ttc` are now used by `trackC_pruning.py`.
+  - Backward compatibility: if those are missing, Track C falls back to legacy `training.candidate_limit` / `training.normalize_ttc`.
+- Instrumentation keys:
+  - Track C accepts both naming schemes:
+    - `instrumentation.measure_latency/vram/flops` (code-style)
+    - `instrumentation.record_latency/vram/flops` (YAML-style)
+  - `instrumentation.warmup_iters` aliases to `instrumentation.bench_warmup`.
+  - `instrumentation.enabled`, `instrumentation.use_cuda_events`, and `instrumentation.bench_samples` are now wired.
+- Output routing:
+  - `output.runs_dir` and `output.metrics_subdir` are now wired for metrics output location.
+- Smoke test:
+  - `smoke_test.enabled` + `smoke_test.max_samples` caps the number of evaluated samples.
+  - `smoke_test.test_rates` can run a small rate list (useful sanity check).
 
 ---
 
@@ -266,6 +282,7 @@ This chapter documents Track C as a thesis-ready narrative and lab manual. It fo
 ## 16. Reproducibility and Logging
 - Config provenance: summary JSON records eval/rgtp/instrumentation configs; metrics include checkpoint/manifest paths.
 - RunLogger: Track C attempts to log configs, metrics, artifacts; warnings are non-fatal if logger missing.
+- Config snapshots: each invocation writes `resolved_config.json` in the RunLogger run folder under `local_extraction/runs/Track_C/`, and summaries include `config_name` + `yaml_config_flat`.
 - Naming: metrics filename encodes rate and timestamp; keep a short text note per run for thesis tables.
 - Checkpoint provenance: store which Track B checkpoint was used (best vs final).
 

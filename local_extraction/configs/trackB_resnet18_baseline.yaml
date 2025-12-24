@@ -17,12 +17,26 @@ model:
     video_backbone: "resnet18"
     backbone: "resnet18"
     pretrained: true
+    # Options:
+    # - true   # ImageNet pretrained (recommended)
+    # - false  # random init (only for ablations)
     freeze_backbone: true
+    # Options:
+    # - true   # default feature-extractor behavior
+    # - false  # fine-tune (heavier)
   
   # ResNet18 layer4 output is 512-dim
   projector:
     in_dim: 512
     out_dim: 256
+    # Options for out_dim:
+    # - 128  # smaller/faster
+    # - 256  # default
+    # - 384  # larger/slower
+
+# Data note (recommended for speed):
+# data:
+#   tokens_root: "v2/resnet18_tokens"  # run `python -m trackB.extract_resnet_tokens` first
 
 # Training note
 _note: |

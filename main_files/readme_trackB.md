@@ -431,8 +431,8 @@ This chapter presents Track B as a self-contained unit for a thesis: conceptual 
 ## 30. Reproducibility and Logging (RunLogger, Config Snapshots)
 - RunLogger: both train and eval attempt to log configs, metrics, artifacts; failures are non-fatal.  
 - Config provenance:  
-  - Train: `_config_to_dict` snapshot embedded in checkpoints and best summaries.  
-  - Eval: EvalConfig serialized into `_summary.json`.  
+  - Train: checkpoints embed both a simplified `train_config` and the full resolved YAML snapshot (`config_name`, `yaml_config`, `yaml_config_flat`).  
+  - Eval: supports `--config <preset>`; each eval run also writes `resolved_config.json` in the RunLogger run folder under `local_extraction/runs/Track_B/`.  
 - Naming: include mode/backbone/priors in run notes for clarity.  
 - Artifact retention: keep `trackB_best.pt`, associated summary JSON, and metrics/predictions for thesis figures.  
 

@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import math
 import time
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -94,6 +95,15 @@ WRITE_SEMANTICS_IN_MANIFEST = _cfg.get('stage_b.output.write_semantics_in_manife
 # Optionally also write recall metrics back into Stage-A summary.json
 WRITE_BACK_TO_STAGEA_SUMMARY = _cfg.get('stage_b.output.write_back_to_stagea_summary', True)
 # =========================================================
+
+
+# -------- Environment overrides (optional, used by smoke tests) --------
+_env_max = os.environ.get("STAGEB_MAX_IMAGES")
+if _env_max:
+    try:
+        MAX_IMAGES = int(_env_max)
+    except Exception:
+        pass
 
 
 def clamp_box(x1: float, y1: float, x2: float, y2: float, W: int, H: int) -> Tuple[int, int, int, int]:
@@ -470,6 +480,8 @@ def main() -> int:
         "run_stamp": RUN_STAMP,
         "eval_with_labels": bool(EVAL_WITH_LABELS),
         "iou_thresh": IOU_THRESH,
+        "config_name": "trackA",
+        "yaml_config_flat": _cfg.flat(),
         "head_manifests": {
             "train_path": str(HEAD_TRAIN_MANIFEST),
             "val_path": str(HEAD_VAL_MANIFEST),
@@ -503,6 +515,23 @@ def main() -> int:
         pass
     if recall_metrics is not None:
         summary["recall_metrics"] = recall_metrics
+
+    # Save full resolved config snapshot alongside summary for provenance
+    try:
+        (RUN_DIR / "resolved_config.json").write_text(
+            json.dumps(
+                {
+                    'config_name': 'trackA',
+                    'config_resolved': _cfg.to_dict(),
+                    'config_flat': _cfg.flat(),
+                },
+                indent=2,
+                default=str,
+            ),
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
 
     (RUN_DIR / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
@@ -539,7 +568,7 @@ def main() -> int:
             metrics.update(recall_metrics)
         run_logger.log_metrics(metrics)
         
-        artifacts = [str(RUN_DIR / "summary.json")]
+        artifacts = [str(RUN_DIR / "summary.json"), str(RUN_DIR / "resolved_config.json")]
         if WRITE_HEAD_TRAIN_VAL:
             artifacts.extend([str(HEAD_TRAIN_OUT), str(HEAD_VAL_OUT)])
         run_logger.log_artifacts(artifacts)

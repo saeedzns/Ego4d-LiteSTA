@@ -24,6 +24,92 @@ python -m trackB.trackB_train_loader --config trackB_videomae_ego
 
 ---
 
+## ✅ Compatibility Guide (Backbone / Tokens / Encoder)
+
+Some Track B config keys are **free knobs** (change them anytime), while others are **compatibility knobs** that must match your backbone, pre-extracted tokens, and/or encoder weights.
+
+This section explains how to tell which is which.
+
+### How to identify “safe vs compatibility” variables
+
+Use this rule of thumb:
+
+- If a key controls **optimization / losses / evaluation toggles** (e.g., `training.*`, `multi_task.*`, `evaluation.*`), it is usually a **safe knob**.
+- If a key controls **tensor shapes / encoder construction / token formats** (e.g., `model.tokenizer.*`, `model.projector.in_dim`, `data.tokens_root`), it is a **compatibility knob**.
+
+Practical method:
+
+1) Start from a known-good preset:
+   - ResNet baseline: `--config trackB_resnet18_baseline`
+   - VideoMAE: `--config trackB_videomae_ego`
+2) Only change **safe knobs** first.
+3) If you change a compatibility knob, do a quick smoke run:
+   - `python local_extraction/trackB/trackB_train_loader.py --config <preset> --demo --epochs 1`
+   - `python local_extraction/trackB/trackB_eval.py --config <preset> --checkpoint <path>`
+
+### Safe knobs (generally compatible across backbones)
+
+You can change these without worrying about encoder/token compatibility:
+
+- Training: `training.epochs`, `training.batch_size`, `training.lr`, `training.min_lr`, `training.warmup_epochs`, `training.label_smoothing`, `training.eval_every`, `training.early_stopping.*`, `training.amp`
+- Data limits: `training.candidate_limit`, `training.normalize_ttc`
+- Multi-task: `multi_task.enabled`, `multi_task.ttc_mode`, `multi_task.ttc_thresholds`, `multi_task.loss_weights.*`
+- Eval toggles (usually): hotspot / CLIP flags and weights under `evaluation.*` (these affect scoring, not shapes)
+
+### Compatibility knobs (must match the backbone / tokens)
+
+These keys can cause hard errors or silent mismatch if set inconsistently:
+
+1) **Backbone selection**
+- `model.tokenizer.video_backbone`
+  - `"resnet18"`: 2D per-frame tokens
+  - `"videomae_ego"`: 3D VideoMAE tokens
+
+2) **Pre-extracted tokens**
+- `data.tokens_root`
+  - If set: the tokenizer will load tokens from disk.
+  - The tokens in that folder must match the chosen `video_backbone` (and expected token shapes).
+  - If the folder is missing or malformed, Track B falls back to on-the-fly extraction (slower).
+
+3) **Projector input dimension (shape-critical)**
+- `model.projector.in_dim`
+  - Must match the token feature dimension produced by the backbone/tokens:
+    - ResNet18 tokens are typically 512
+    - VideoMAE base is typically 768
+  - If mismatched, you’ll get a shape error when projecting tokens.
+
+4) **VideoMAE encoder construction (VideoMAE-only)**
+Only relevant when `video_backbone: "videomae_ego"`:
+
+- `model.tokenizer.videomae.weights_path` (must exist, otherwise results degrade)
+- `model.tokenizer.videomae.embed_dim`, `depth`, `num_heads`, `patch_size`, `tubelet_size`, `num_frames`
+  - These must match how the encoder checkpoint was trained.
+  - If they do not match, loading weights can fail or produce incompatible outputs.
+
+5) **Temporal window parameters**
+- `model.tokenizer.time_len`, `model.tokenizer.time_stride`
+  - These affect what frame window is sampled.
+  - For VideoMAE, `time_len` typically must match the pretrained model’s expectation (often 16).
+
+### Recommended workflow
+
+- If you’re using **ResNet18**:
+  - Prefer changing: `training.*`, `multi_task.*`, `evaluation.*`, `training.candidate_limit`
+  - Be cautious changing: `model.projector.in_dim` (should stay 512)
+
+- If you’re using **VideoMAE**:
+  - Start from [local_extraction/configs/trackB_videomae_ego.yaml](../configs/trackB_videomae_ego.yaml)
+  - Prefer changing: `training.*`, `multi_task.*`, `training.candidate_limit`
+  - Avoid changing (unless you know your encoder checkpoint): `videomae.*` block and `projector.in_dim`
+
+### Quick “did I break compatibility?” signals
+
+- Immediate runtime error mentioning shapes (e.g., `mat1 and mat2 shapes cannot be multiplied`) → `model.projector.in_dim` mismatch.
+- Errors loading model weights → `videomae.*` parameters don’t match the checkpoint.
+- Eval/training runs but metrics collapse unexpectedly → often wrong `weights_path` (random init) or tokens from a different backbone.
+
+---
+
 ## 🧠 Model Architecture
 
 ### Backbone / Tokenizer

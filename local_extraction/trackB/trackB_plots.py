@@ -23,7 +23,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -63,18 +65,30 @@ def load_metrics(runs_dir: Path) -> List[MetricPoint]:
         raise FileNotFoundError(f"metrics directory not found: {metrics_dir}")
     # Exclude *_summary.json files
     files = sorted(f for f in metrics_dir.glob("metrics_val_*.json") if not f.name.endswith("_summary.json"))
-    points: List[MetricPoint] = []
-    for i, path in enumerate(files):
+    raw_points: List[tuple[datetime, Path, str, str, Dict[str, float]]] = []
+    for path in files:
         try:
             obj = json.loads(path.read_text(encoding="utf-8"))
         except Exception:
             continue
         checkpoint = str(obj.get("checkpoint", "")) or path.name
         ts = obj.get("timestamp")
+        # Parse timestamp from filename (YYYYMMDD_HHMMSS) or use file modification time
+        match = re.search(r'(\d{8})_(\d{6})', path.name)
+        if match:
+            dt = datetime.strptime(match.group(1) + match.group(2), '%Y%m%d%H%M%S')
+        else:
+            dt = datetime.fromtimestamp(path.stat().st_mtime)
         values: Dict[str, float] = {}
         for k, v in obj.items():
             if isinstance(v, (int, float)):
                 values[k] = float(v)
+        raw_points.append((dt, path, checkpoint, ts, values))
+    # Sort by datetime (chronological order)
+    raw_points.sort(key=lambda x: x[0])
+    # Assign indices based on chronological order
+    points: List[MetricPoint] = []
+    for i, (dt, path, checkpoint, ts, values) in enumerate(raw_points):
         points.append(MetricPoint(idx=i, checkpoint=checkpoint, timestamp=ts, values=values))
     return points
 
@@ -142,7 +156,7 @@ def plot_metrics(points: List[MetricPoint], out_dir: Path) -> None:
         # Connect with a thick dark blue line for trend
         ax.plot(xs, ys, color="darkblue", alpha=0.9, linestyle="-", linewidth=2)
         ax.set_title(key)
-        ax.set_xlabel("Eval index (sorted metrics files)")
+        ax.set_xlabel("Run index (chronological order)")
         ax.set_ylabel(key)
         ax.grid(True, alpha=0.3)
 
@@ -198,7 +212,7 @@ def plot_metrics(points: List[MetricPoint], out_dir: Path) -> None:
                 ax.plot(x, y, marker="o", color=colors[i], linestyle="None", markersize=8)
             ax.plot(xs_top5, ys, color="darkblue", alpha=0.9, linestyle="-", linewidth=2)
             ax.set_title(key)
-            ax.set_xlabel("Eval index (sorted metrics files)")
+            ax.set_xlabel("Run index (chronological order)")
             ax.set_ylabel("Top-5 mAP (%)")
             ax.grid(True, alpha=0.3)
 

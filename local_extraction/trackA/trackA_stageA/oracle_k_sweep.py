@@ -24,9 +24,19 @@ from pathlib import Path
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[2]  # repo root
-STAGEA = ROOT / "local_extraction" / "trackA_stageA" / "trackA_stageA.py"
-STAGEB = ROOT / "local_extraction" / "trackA_stageB" / "trackA_stageB.py"
+STAGEA = ROOT / "local_extraction" / "trackA" / "trackA_stageA" / "trackA_stageA.py"
+STAGEB = ROOT / "local_extraction" / "trackA" / "trackA_stageB" / "trackA_stageB.py"
 RUNS = ROOT / "local_extraction" / "runs" / "Track_A"
+
+
+def _load_tracka_cfg():
+    try:
+        # local_extraction/core is importable when running from repo root.
+        from core import load_config
+
+        return load_config('trackA')
+    except Exception:
+        return None
 
 
 def latest_run(prefix: str) -> Path | None:
@@ -49,9 +59,28 @@ def run_stage(script: Path, extra_env: dict[str, str] | None = None) -> int:
 
 
 def main() -> int:
-    ks = os.environ.get("ORACLE_SWEEP_KS", "1,2,3,5,8,10")
-    k_list = [int(x) for x in ks.split(",") if x.strip()]
+    cfg = _load_tracka_cfg()
+    # Env overrides win.
+    ks = os.environ.get("ORACLE_SWEEP_KS")
+    if ks is None and cfg is not None:
+        cfg_ks = cfg.get('k_sweep.k_values', None)
+        if isinstance(cfg_ks, (list, tuple)) and cfg_ks:
+            k_list = [int(x) for x in cfg_ks]
+        else:
+            k_list = [1, 2, 3, 5, 8, 10]
+    else:
+        ks = ks or "1,2,3,5,8,10"
+        k_list = [int(x) for x in ks.split(",") if x.strip()]
+
     max_images = int(os.environ.get("ORACLE_SWEEP_MAX_IMAGES", "500"))
+    if cfg is not None:
+        # If StageA max_images is set in YAML, use it unless an env override exists.
+        cfg_max = cfg.get('stage_a.max_images', None)
+        if os.environ.get("ORACLE_SWEEP_MAX_IMAGES") is None and cfg_max is not None:
+            try:
+                max_images = int(cfg_max)
+            except Exception:
+                pass
 
     results = []
     for k in k_list:

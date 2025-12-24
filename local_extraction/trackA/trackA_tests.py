@@ -97,7 +97,7 @@ def test_stageA_mode_options():
     cfg = load_config('trackA')
     mode = cfg.get('stage_a.mode', 'yolo')
     
-    valid_modes = ['yolo', 'oracle', 'grid']
+    valid_modes = ['yolo', 'oracle']
     assert mode in valid_modes, f"Invalid mode: {mode}, expected one of {valid_modes}"
     
     print(f"  [Stage A] Mode '{mode}' is valid")

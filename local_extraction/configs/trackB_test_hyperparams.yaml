@@ -1,0 +1,8 @@
+# Test config: Different training hyperparameters
+_base_: "trackB_resnet18_baseline.yaml"
+
+training:
+  lr: 1.0e-3  # Higher learning rate
+  batch_size: 16  # Larger batch
+  candidate_limit: 32  # More candidates
+  label_smoothing: 0.05  # Less smoothing

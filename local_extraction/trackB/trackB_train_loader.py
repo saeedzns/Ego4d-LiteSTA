@@ -53,7 +53,8 @@ def _parse_args():
                         help='Override learning rate')
     parser.add_argument('--seed', type=int, default=None,
                         help='Override random seed for reproducibility')
-    return parser.parse_args()
+    args, _unknown = parser.parse_known_args()
+    return args
 
 # Parse args before loading config (so we can use --config)
 _cli_args = _parse_args()
@@ -134,7 +135,15 @@ class TrainConfig:
     warmup_epochs: float = _cfg.get('training.warmup_epochs', 1.0)
     candidate_limit: int = _cfg.get('training.candidate_limit', 16)
     label_smoothing: float = _cfg.get('training.label_smoothing', 0.05)
+    weight_decay: float = _cfg.get('training.weight_decay', 0.0)
     normalize_ttc: bool = _cfg.get('training.normalize_ttc', True)
+
+    # Model wiring (read from YAML so architecture is configurable)
+    fusion_heads: int = _cfg.get('model.fusion.heads', 8)
+    fusion_dropout: float = _cfg.get('model.fusion.dropout', 0.1)
+    fgtp_stride_t: int = _cfg.get('model.fusion.fgtp_stride_t', 2)
+    fusion_ff_mult: int = _cfg.get('model.fusion.ff_mult', 4)
+    head_dropout: float = _cfg.get('model.head.dropout', 0.1)
     
     # Checkpointing
     save_epoch_checkpoints: bool = _cfg.get('training.save_epoch_checkpoints', True)
@@ -697,12 +706,44 @@ def main():
     if _cli_args.seed is not None:
         cfg.seed = _cli_args.seed
     
+    # Apply smoke test overrides if enabled
+    smoke_enabled = _cfg.get('smoke_test.enabled', False)
+    if smoke_enabled:
+        print("[TrackB] SMOKE TEST MODE ENABLED")
+        cfg.mode = 'main'
+        cfg.epochs = _cfg.get('smoke_test.max_epochs', 1)
+        cfg.save_epoch_checkpoints = not _cfg.get('smoke_test.skip_save', True)
+        cfg.save_best_checkpoint = not _cfg.get('smoke_test.skip_save', True)
+        print(f"[TrackB] Smoke test: epochs={cfg.epochs}, save_checkpoints={cfg.save_epoch_checkpoints}")
+    
     _set_seed(cfg.seed)  # Set seed from config for reproducibility
     
     # Initialize run logger
     from core import RunLogger
     run_logger = RunLogger(track='trackB')
-    run_logger.log_config(_config_to_dict(cfg))
+    # Persist full resolved YAML config alongside the run log (for provenance).
+    resolved_cfg_path = run_logger.run_dir / "resolved_config.json"
+    try:
+        resolved_cfg_path.write_text(
+            json.dumps(
+                {
+                    'config_name': _config_name,
+                    'config_resolved': _cfg.to_dict(),
+                    'config_flat': _cfg.flat(),
+                },
+                indent=2,
+                default=str,
+            ),
+            encoding='utf-8',
+        )
+    except Exception:
+        pass
+
+    run_logger.log_config({
+        'config_name': _config_name,
+        'train_config': _config_to_dict(cfg),
+        'config_resolved_path': str(resolved_cfg_path),
+    })
     run_logger.log_start()
     
     # Determine if we're running from local_extraction or repo root
@@ -761,6 +802,13 @@ def main():
         normalize_ttc=cfg.normalize_ttc,
         tokens_root=tokens_root,
     )
+    
+    # Apply smoke test sample limit
+    if smoke_enabled:
+        max_samples = _cfg.get('smoke_test.max_samples', 5)
+        original_len = len(ds)
+        ds.records = ds.records[:max_samples]
+        print(f"[TrackB] Smoke test: limited dataset to {len(ds.records)}/{original_len} samples")
 
     # Models
     C = TOKEN_DIM
@@ -792,7 +840,16 @@ def main():
     
     print(f"[TrackB] Projector: {projector_in_dim} -> {C}")
     projector = nn.Linear(projector_in_dim, C)
-    fusion = TrackBFusion(FusionConfig(dim=C, layers=FUSION_LAYERS))
+    fusion = TrackBFusion(
+        FusionConfig(
+            dim=C,
+            heads=int(cfg.fusion_heads),
+            layers=FUSION_LAYERS,
+            dropout=float(cfg.fusion_dropout),
+            fgtp_stride_t=int(cfg.fgtp_stride_t),
+            ff_mult=int(cfg.fusion_ff_mult),
+        )
+    )
     # Infer class vocabularies from dataset labels.
     # Next-active: keep generic cls labels (usually 0/1).
     max_label = 0
@@ -836,6 +893,7 @@ def main():
         dim=C,
         num_classes=num_classes,
         hidden=HEAD_HIDDEN,
+        dropout=float(cfg.head_dropout),
         num_noun_classes=num_noun_classes,
         num_verb_classes=num_verb_classes,
         num_ttc_bins=num_ttc_bins,
@@ -847,7 +905,12 @@ def main():
     projector.to(device); fusion.to(device); head.to(device)
 
     # Optimizer
-    opt = optim.Adam(list(projector.parameters()) + list(fusion.parameters()) + list(head.parameters()), lr=cfg.lr)
+    params = list(projector.parameters()) + list(fusion.parameters()) + list(head.parameters())
+    wd = float(getattr(cfg, 'weight_decay', 0.0) or 0.0)
+    if wd > 0:
+        opt = optim.AdamW(params, lr=cfg.lr, weight_decay=wd)
+    else:
+        opt = optim.Adam(params, lr=cfg.lr)
 
     # Losses
     try:
@@ -1055,6 +1118,9 @@ def main():
                     'noun_id_list': noun_id_list,
                     'verb_id_list': verb_id_list,
                     'train_config': cfg_dict,
+                    'config_name': _config_name,
+                    'yaml_config': _cfg.to_dict(),
+                    'yaml_config_flat': _cfg.flat(),
                 }, ckpt_path_epoch)
                 print(f"[TrackB main] Saved epoch checkpoint: {ckpt_path_epoch}")
             if val_loader is not None and ((epoch + 1) % max(1, cfg.eval_every) == 0):
@@ -1087,6 +1153,9 @@ def main():
                                 'noun_id_list': noun_id_list,
                                 'verb_id_list': verb_id_list,
                                 'train_config': cfg_dict,
+                                'config_name': _config_name,
+                                'yaml_config': _cfg.to_dict(),
+                                'yaml_config_flat': _cfg.flat(),
                             }
                             torch.save(payload, best_path)
                             torch.save(payload, checkpoints_dir / 'trackB_best.pt')
@@ -1098,6 +1167,8 @@ def main():
                                 'timestamp': ts,
                                 'metrics': metrics,
                                 'train_config': cfg_dict,
+                                'config_name': _config_name,
+                                'yaml_config_flat': _cfg.flat(),
                             }
                             summary_path = checkpoints_dir / f"trackB_best_{metric_name}_{cur:.4f}_{ts}_summary.json"
                             try:
@@ -1133,11 +1204,14 @@ def main():
         'noun_id_list': noun_id_list,
         'verb_id_list': verb_id_list,
         'train_config': cfg_dict,
+        'config_name': _config_name,
+        'yaml_config': _cfg.to_dict(),
+        'yaml_config_flat': _cfg.flat(),
     }, ckpt_path)
     print(f"[TrackB] Saved final checkpoint: {ckpt_path}")
     
     # Log artifacts
-    run_logger.log_artifacts([str(ckpt_path)])
+    run_logger.log_artifacts([str(ckpt_path), str(resolved_cfg_path)])
     run_logger.log_output('final_checkpoint', str(ckpt_path))
 
     # Tiny eval replaced by integrated metrics summary on one batch for quick sanity

@@ -2,6 +2,10 @@
 
 This document explains every step, toggle, and output for the Track A pipeline that prepares proposals and head manifests for downstream Track B/C. Edit the in-file configs (no CLI needed) and keep everything local.
 
+Update (wiring notes): Track A scripts now load most settings from `local_extraction/configs/trackA.yaml` (with optional env overrides). The `k_sweep.*` and `smoke_test.*` YAML blocks are consumed by dedicated runners:
+- K sweep: `local_extraction/trackA/trackA_stageA/oracle_k_sweep.py`
+- Smoke test: `local_extraction/trackA/trackA_smoke_test.py`
+
 ---
 
 ## 1) Prerequisites & Layout

@@ -20,7 +20,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -67,14 +69,26 @@ IMPORTANT_KEYS_ORDER = [
 ]
 
 
-def load_metrics(runs_dir: Path) -> List[MetricPoint]:
-    metrics_dir = runs_dir / "metrics"
+def _try_load_trackc_cfg() -> Optional[Any]:
+    """Best-effort load of Track C YAML config.
+
+    Returns a config-like object supporting `.get(key, default)` on success, else None.
+    """
+    try:
+        from core import load_config
+        return load_config("trackC")
+    except Exception:
+        return None
+
+
+def load_metrics(runs_dir: Path, metrics_subdir: str = "metrics") -> List[MetricPoint]:
+    metrics_dir = runs_dir / metrics_subdir
     if not metrics_dir.exists():
         raise FileNotFoundError(f"metrics directory not found: {metrics_dir}")
     # Exclude *_summary.json files
     files = sorted(f for f in metrics_dir.glob("trackC_val_rate*.json") if not f.name.endswith("_summary.json"))
-    points: List[MetricPoint] = []
-    for i, path in enumerate(files):
+    raw_points: List[tuple[datetime, Path, str, Optional[float], str, Dict[str, float]]] = []
+    for path in files:
         try:
             obj = json.loads(path.read_text(encoding="utf-8"))
         except Exception:
@@ -82,10 +96,22 @@ def load_metrics(runs_dir: Path) -> List[MetricPoint]:
         checkpoint = str(obj.get("checkpoint", "")) or path.name
         rate = obj.get("rgtp_rate_request")
         ts = obj.get("timestamp")
+        # Parse timestamp from filename (YYYYMMDD_HHMMSS) or use file modification time
+        match = re.search(r'(\d{8})_(\d{6})', path.name)
+        if match:
+            dt = datetime.strptime(match.group(1) + match.group(2), '%Y%m%d%H%M%S')
+        else:
+            dt = datetime.fromtimestamp(path.stat().st_mtime)
         values: Dict[str, float] = {}
         for k, v in obj.items():
             if isinstance(v, (int, float)):
                 values[k] = float(v)
+        raw_points.append((dt, path, checkpoint, rate, ts, values))
+    # Sort by datetime (chronological order)
+    raw_points.sort(key=lambda x: x[0])
+    # Assign indices based on chronological order
+    points: List[MetricPoint] = []
+    for i, (dt, path, checkpoint, rate, ts, values) in enumerate(raw_points):
         points.append(MetricPoint(idx=i, checkpoint=checkpoint, rate=rate, timestamp=ts, values=values))
     return points
 
@@ -151,7 +177,7 @@ def plot_metrics(points: List[MetricPoint], out_dir: Path) -> None:
         # Connect with a thick dark blue line for trend
         ax.plot(xs, ys, color="darkblue", alpha=0.9, linestyle="-", linewidth=2)
         ax.set_title(key)
-        ax.set_xlabel("Eval index (sorted metrics files)")
+        ax.set_xlabel("Run index (chronological order)")
         ax.set_ylabel(key)
         ax.grid(True, alpha=0.3)
 
@@ -208,7 +234,7 @@ def plot_metrics(points: List[MetricPoint], out_dir: Path) -> None:
                 ax.plot(x, y, marker="o", color=colors[i], linestyle="None", markersize=8)
             ax.plot(xs_top5, ys, color="darkblue", alpha=0.9, linestyle="-", linewidth=2)
             ax.set_title(key)
-            ax.set_xlabel("Eval index (sorted metrics files)")
+            ax.set_xlabel("Run index (chronological order)")
             ax.set_ylabel("Top-5 mAP (%)")
             ax.grid(True, alpha=0.3)
 
@@ -257,26 +283,32 @@ def main() -> None:
     ap.add_argument(
         "--runs_dir",
         type=str,
-        default="local_extraction/runs/Track_C",
-        help="Path to Track_C runs directory (containing metrics/).",
+        default=None,
+        help="Path to Track_C runs directory (default: from configs/trackC.yaml -> output.runs_dir).",
     )
     ap.add_argument(
         "--out_dir",
         type=str,
         default=None,
-        help="Output directory for plots (default: <runs_dir>/plots).",
+        help="Output directory for plots (default: <runs_dir>/<plots_subdir> from configs/trackC.yaml).",
     )
     args = ap.parse_args()
 
-    runs_dir = Path(args.runs_dir)
-    out_dir = Path(args.out_dir) if args.out_dir is not None else runs_dir / "plots"
+    cfg = _try_load_trackc_cfg()
+    default_runs_dir = str(Path("local_extraction") / "runs" / "Track_C")
+    runs_dir_cfg = cfg.get("output.runs_dir", default_runs_dir) if cfg is not None else default_runs_dir
+    metrics_subdir = cfg.get("output.metrics_subdir", "metrics") if cfg is not None else "metrics"
+    plots_subdir = cfg.get("output.plots_subdir", "plots") if cfg is not None else "plots"
 
-    points = load_metrics(runs_dir)
+    runs_dir = Path(args.runs_dir) if args.runs_dir is not None else Path(str(runs_dir_cfg))
+    out_dir = Path(args.out_dir) if args.out_dir is not None else runs_dir / str(plots_subdir)
+
+    points = load_metrics(runs_dir, metrics_subdir=str(metrics_subdir))
     if not points:
-        print(f"[trackC.plots] No trackC_val_rate*.json found under {runs_dir}/metrics.")
+        print(f"[trackC.plots] No trackC_val_rate*.json found under {runs_dir}/{metrics_subdir}.")
         return
 
-    print(f"[trackC.plots] Loaded {len(points)} metric snapshots from {runs_dir}/metrics.")
+    print(f"[trackC.plots] Loaded {len(points)} metric snapshots from {runs_dir}/{metrics_subdir}.")
     plot_metrics(points, out_dir)
 
 

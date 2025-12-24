@@ -13,6 +13,7 @@ Configuration is loaded from configs/trackB.yaml
 from __future__ import annotations
 
 import sys
+import argparse
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
@@ -26,6 +27,30 @@ import torch.nn.functional as F
 from PIL import Image, ImageDraw, ImageFont
 from tqdm import tqdm
 
+
+# ================== CLI ARGUMENT PARSING ==================
+def _parse_args():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description="Track B multi-task evaluation")
+    parser.add_argument(
+        '--config',
+        type=str,
+        default='trackB',
+        help='Config name to load (e.g., trackB, trackB_resnet18_baseline, trackB_videomae_ego)',
+    )
+    parser.add_argument('--checkpoint', type=str, default=None, help='Checkpoint path (defaults to best/final under runs/Track_B/checkpoints)')
+    parser.add_argument('--val_manifest', type=str, default=None, help='Explicit validation manifest path')
+    parser.add_argument('--stageB_run', type=str, default=None, help='TrackA StageB run directory')
+    parser.add_argument('--ttc_mode', type=str, default='reg', choices=['reg', 'binned'], help='TTC mode for N+δ (reg or binned)')
+    parser.add_argument('--hotspot', type=str, default=None, choices=['on', 'off'], help='Enable/disable hotspot priors (overrides config)')
+    parser.add_argument('--clip', type=str, default=None, choices=['on', 'off'], help='Enable/disable CLIP re-ranking (overrides config)')
+    args, _unknown = parser.parse_known_args()
+    return args
+
+
+_cli_args = _parse_args()
+# ==========================================================
+
 # ================== YAML CONFIG LOADING ==================
 _THIS_DIR = Path(__file__).resolve().parent
 _LOCAL_EXTRACTION = _THIS_DIR.parent
@@ -37,8 +62,14 @@ for p in [str(_LOCAL_EXTRACTION), str(_REPO_ROOT), str(_THIS_DIR)]:
 
 from core import load_config
 
-# Load configuration from YAML
-_cfg = load_config('trackB')
+# Load configuration from YAML (using --config if specified)
+_config_name = _cli_args.config
+print(f"[trackB.eval] Loading config: {_config_name}")
+_cfg = load_config(_config_name)
+
+# Ensure tokenizer reads the same config
+import trackB_tokenizer
+trackB_tokenizer.set_tokenizer_config(_cfg)
 # =========================================================
 
 from trackB_dataset import (
@@ -72,6 +103,13 @@ class EvalConfig:
     num_classes: int = _cfg.get('model.head.num_classes', 2)
     fusion_layers: int = _cfg.get('model.fusion.layers', 2)
 
+    # Fusion/head wiring (from YAML; checkpoint may override for safety)
+    fusion_heads: int = _cfg.get('model.fusion.heads', 8)
+    fusion_dropout: float = _cfg.get('model.fusion.dropout', 0.1)
+    fgtp_stride_t: int = _cfg.get('model.fusion.fgtp_stride_t', 2)
+    fusion_ff_mult: int = _cfg.get('model.fusion.ff_mult', 4)
+    head_dropout: float = _cfg.get('model.head.dropout', 0.1)
+
     # Data (from YAML)
     batch_size: int = _cfg.get('evaluation.batch_size', 8)
     candidate_limit: int = _cfg.get('training.candidate_limit', 16)
@@ -80,6 +118,10 @@ class EvalConfig:
     # Outputs (from YAML)
     topk_overlay: int = _cfg.get('evaluation.topk_overlay', 3)
     save_overlays: bool = _cfg.get('evaluation.save_overlays', True)
+
+    # Metric toggles (from YAML)
+    compute_map: bool = _cfg.get('evaluation.compute_map', True)
+    compute_ttc_mae: bool = _cfg.get('evaluation.compute_ttc_mae', True)
     
     # Multi-task / evaluation options
     ttc_mode: str = _cfg.get('multi_task.ttc_mode', 'reg')
@@ -141,12 +183,35 @@ def _load_models(cfg: EvalConfig, device: str, checkpoint: Path):
     else:
         projector_in_dim = 512  # default for ResNet18
     
+    # Prefer architecture params stored in checkpoint (prevents silent mismatch at eval)
+    train_cfg = ckpt.get('train_config') or {}
+    fusion_heads = int(train_cfg.get('fusion_heads', cfg.fusion_heads))
+    fusion_dropout = float(train_cfg.get('fusion_dropout', cfg.fusion_dropout))
+    fgtp_stride_t = int(train_cfg.get('fgtp_stride_t', cfg.fgtp_stride_t))
+    fusion_ff_mult = int(train_cfg.get('fusion_ff_mult', cfg.fusion_ff_mult))
+    head_dropout = float(train_cfg.get('head_dropout', cfg.head_dropout))
+
     projector = torch.nn.Linear(projector_in_dim, cfg.token_dim)
-    fusion = TrackBFusion(FusionConfig(dim=cfg.token_dim, layers=cfg.fusion_layers))
+    fusion = TrackBFusion(
+        FusionConfig(
+            dim=cfg.token_dim,
+            heads=fusion_heads,
+            layers=cfg.fusion_layers,
+            dropout=fusion_dropout,
+            fgtp_stride_t=fgtp_stride_t,
+            ff_mult=fusion_ff_mult,
+        )
+    )
+
+    # Infer hidden dim from checkpoint weights when available (prevents load_state_dict mismatch)
+    hidden_dim = 256
+    if h_w is not None and hasattr(h_w, 'shape') and len(h_w.shape) == 2:
+        hidden_dim = int(h_w.shape[1])
     head_cfg = HeadConfig(
         dim=cfg.token_dim,
         num_classes=num_classes,
-        hidden=256,
+        hidden=hidden_dim,
+        dropout=head_dropout,
         num_noun_classes=num_noun_classes,
         num_verb_classes=num_verb_classes,
         num_ttc_bins=num_ttc_bins,
@@ -833,14 +898,20 @@ def evaluate(cfg: EvalConfig) -> Dict[str, Any]:
     # Metrics
     K = logits_all.shape[1]
     acc = multiclass_accuracy(logits_all, labels_all) if K > 2 else binary_accuracy(logits_all, labels_all)
-    if K == 2:
-        ap = binary_average_precision(logits_all, labels_all)
-        ap_per_class = {1: ap}  # positive class AP
-        map_score = ap
-    else:
-        ap_per_class = per_class_ap(logits_all, labels_all, K)
-        map_score = float(sum(ap_per_class.values()) / max(1, len(ap_per_class)))
-    mae_ttc = ttc_mae(pred_ttc_all, gt_ttc_all)
+    map_score = None
+    ap_per_class = None
+    if cfg.compute_map:
+        if K == 2:
+            ap = binary_average_precision(logits_all, labels_all)
+            ap_per_class = {1: ap}  # positive class AP
+            map_score = ap
+        else:
+            ap_per_class = per_class_ap(logits_all, labels_all, K)
+            map_score = float(sum(ap_per_class.values()) / max(1, len(ap_per_class)))
+
+    mae_ttc = None
+    if cfg.compute_ttc_mae:
+        mae_ttc = ttc_mae(pred_ttc_all, gt_ttc_all)
 
     metrics: Dict[str, Any] = {
         'accuracy': acc,
@@ -855,14 +926,15 @@ def evaluate(cfg: EvalConfig) -> Dict[str, Any]:
     if train_config_from_ckpt:
         metrics['train_config'] = train_config_from_ckpt
     # Frame-level N / N+V / N+δ metrics (if available)
-    if n_total_N > 0:
-        metrics['N_mAP'] = n_correct_N / n_total_N
-    if n_total_NV > 0:
-        metrics['Nv_mAP'] = n_correct_NV / n_total_NV
-    if n_total_Nd > 0:
-        metrics['N_delta_mAP'] = n_correct_Nd / n_total_Nd
-    if n_total_All > 0:
-        metrics['All_mAP'] = n_correct_All / n_total_All
+    if cfg.compute_map:
+        if n_total_N > 0:
+            metrics['N_mAP'] = n_correct_N / n_total_N
+        if n_total_NV > 0:
+            metrics['Nv_mAP'] = n_correct_NV / n_total_NV
+        if n_total_Nd > 0:
+            metrics['N_delta_mAP'] = n_correct_Nd / n_total_Nd
+        if n_total_All > 0:
+            metrics['All_mAP'] = n_correct_All / n_total_All
     # Top-5 hit-rate metrics
     if n_total_N_top5 > 0:
         metrics['N_top5_acc'] = n_correct_N_top5 / n_total_N_top5
@@ -873,22 +945,23 @@ def evaluate(cfg: EvalConfig) -> Dict[str, Any]:
     if n_total_All_top5 > 0:
         metrics['All_top5_acc'] = n_correct_All_top5 / n_total_All_top5
     # Top-5 AP metrics (global over candidates)
-    if top5_scores_N:
-        scores = torch.tensor(top5_scores_N, dtype=torch.float32)
-        labels_top = torch.tensor(top5_labels_N, dtype=torch.long)
-        metrics['N_top5_mAP'] = binary_average_precision(scores, labels_top)
-    if top5_scores_NV:
-        scores = torch.tensor(top5_scores_NV, dtype=torch.float32)
-        labels_top = torch.tensor(top5_labels_NV, dtype=torch.long)
-        metrics['Nv_top5_mAP'] = binary_average_precision(scores, labels_top)
-    if top5_scores_Nd:
-        scores = torch.tensor(top5_scores_Nd, dtype=torch.float32)
-        labels_top = torch.tensor(top5_labels_Nd, dtype=torch.long)
-        metrics['N_delta_top5_mAP'] = binary_average_precision(scores, labels_top)
-    if top5_scores_All:
-        scores = torch.tensor(top5_scores_All, dtype=torch.float32)
-        labels_top = torch.tensor(top5_labels_All, dtype=torch.long)
-        metrics['All_top5_mAP'] = binary_average_precision(scores, labels_top)
+    if cfg.compute_map:
+        if top5_scores_N:
+            scores = torch.tensor(top5_scores_N, dtype=torch.float32)
+            labels_top = torch.tensor(top5_labels_N, dtype=torch.long)
+            metrics['N_top5_mAP'] = binary_average_precision(scores, labels_top)
+        if top5_scores_NV:
+            scores = torch.tensor(top5_scores_NV, dtype=torch.float32)
+            labels_top = torch.tensor(top5_labels_NV, dtype=torch.long)
+            metrics['Nv_top5_mAP'] = binary_average_precision(scores, labels_top)
+        if top5_scores_Nd:
+            scores = torch.tensor(top5_scores_Nd, dtype=torch.float32)
+            labels_top = torch.tensor(top5_labels_Nd, dtype=torch.long)
+            metrics['N_delta_top5_mAP'] = binary_average_precision(scores, labels_top)
+        if top5_scores_All:
+            scores = torch.tensor(top5_scores_All, dtype=torch.float32)
+            labels_top = torch.tensor(top5_labels_All, dtype=torch.long)
+            metrics['All_top5_mAP'] = binary_average_precision(scores, labels_top)
     # Per-noun / per-verb accuracy breakdowns
     if noun_stats_total:
         per_noun = {}
@@ -943,10 +1016,32 @@ def evaluate(cfg: EvalConfig) -> Dict[str, Any]:
     # Log run using RunLogger
     try:
         from core import RunLogger
-        run_logger = RunLogger(track='trackB', run_dir=Path("local_extraction") / "runs" / "Track_B")
-        run_logger.log_config(_serialize_eval_config(cfg))
+        run_logger = RunLogger(track='trackB')
+        # Persist full resolved YAML config alongside the run log (for provenance).
+        resolved_cfg_path = run_logger.run_dir / "resolved_config.json"
+        try:
+            resolved_cfg_path.write_text(
+                json.dumps(
+                    {
+                        'config_name': _config_name,
+                        'config_resolved': _cfg.to_dict(),
+                        'config_flat': _cfg.flat(),
+                    },
+                    indent=2,
+                    default=str,
+                ),
+                encoding='utf-8',
+            )
+        except Exception:
+            pass
+
+        run_logger.log_config({
+            'config_name': _config_name,
+            'eval_config': _serialize_eval_config(cfg),
+            'config_resolved_path': str(resolved_cfg_path),
+        })
         run_logger.log_metrics(metrics)
-        run_logger.log_artifacts([str(metrics_path), str(csv_path), str(jsonl_path)])
+        run_logger.log_artifacts([str(metrics_path), str(summary_path), str(csv_path), str(jsonl_path), str(resolved_cfg_path)])
         run_logger.log_end(success=True)
         run_logger.print_summary()
     except Exception as e:
@@ -956,30 +1051,19 @@ def evaluate(cfg: EvalConfig) -> Dict[str, Any]:
 
 
 if __name__ == '__main__':
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Track B multi-task evaluation")
-    parser.add_argument('--checkpoint', type=str, default=None, help='Checkpoint path (defaults to best/final under runs/Track_B/checkpoints)')
-    parser.add_argument('--val_manifest', type=str, default=None, help='Explicit validation manifest path')
-    parser.add_argument('--stageB_run', type=str, default=None, help='TrackA StageB run directory')
-    parser.add_argument('--ttc_mode', type=str, default='reg', choices=['reg', 'binned'], help='TTC mode for N+δ (reg or binned)')
-    parser.add_argument('--hotspot', type=str, default=None, choices=['on', 'off'], help='Enable/disable hotspot priors (overrides config)')
-    parser.add_argument('--clip', type=str, default=None, choices=['on', 'off'], help='Enable/disable CLIP re-ranking (overrides config)')
-    args = parser.parse_args()
-
     cfg = EvalConfig()
-    if args.checkpoint:
-        cfg.checkpoint_path = Path(args.checkpoint)
-    if args.val_manifest:
-        cfg.val_manifest = Path(args.val_manifest)
-    if args.stageB_run:
-        cfg.stageB_run = args.stageB_run
-    cfg.ttc_mode = args.ttc_mode
+    if _cli_args.checkpoint:
+        cfg.checkpoint_path = Path(_cli_args.checkpoint)
+    if _cli_args.val_manifest:
+        cfg.val_manifest = Path(_cli_args.val_manifest)
+    if _cli_args.stageB_run:
+        cfg.stageB_run = _cli_args.stageB_run
+    cfg.ttc_mode = _cli_args.ttc_mode
     
     # Override hotspot/clip from CLI
-    if args.hotspot is not None:
-        cfg.use_hotspot_priors = (args.hotspot == 'on')
-    if args.clip is not None:
-        cfg.use_clip_rerank = (args.clip == 'on')
+    if _cli_args.hotspot is not None:
+        cfg.use_hotspot_priors = (_cli_args.hotspot == 'on')
+    if _cli_args.clip is not None:
+        cfg.use_clip_rerank = (_cli_args.clip == 'on')
 
     evaluate(cfg)
