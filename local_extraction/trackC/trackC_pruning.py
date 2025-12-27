@@ -183,6 +183,9 @@ class EvalConfig:
     clip_weight: float = _cfg.get('evaluation.clip_rerank.weight', 0.3)
     clip_model: str = _cfg.get('evaluation.clip_rerank.model', 'ViT-B/32')
     noun_label_path: Optional[Path] = Path(_cfg.get('paths.org_annotations', 'local_extraction/v2/org_annotations')) / "fho_sta_val_height-540.json"
+    # Official Ego4D TTC threshold (seconds) for N+δ and All metrics
+    # Per official benchmark: |pred_ttc - gt_ttc| <= 0.25s
+    ttc_threshold: float = _cfg.get('evaluation.ttc_threshold', 0.25)
 
 
 @dataclass
@@ -1040,15 +1043,17 @@ def evaluate(cfg: EvalConfig, rgtp_cfg: RGTPConfig, instr_cfg: Optional[Instrume
                                 verb_stats_total[gt_verb] = verb_stats_total.get(gt_verb, 0) + 1
                                 if pred_verb_global == gt_verb:
                                     verb_stats_correct[gt_verb] = verb_stats_correct.get(gt_verb, 0) + 1
-                            # N+δ
-                            if pred_bin is not None and has_noun and gt_noun >= 0 and pred_noun_global is not None:
+                            # N+δ - Official Ego4D: |pred_ttc - gt_ttc| <= 0.25s
+                            pred_ttc_val = float(ttc_s[pred_idx].item())
+                            gt_ttc_val_for_match = float(sample['ttc'][gt_idx].item()) if gt_idx < len(sample['ttc']) else 0.0
+                            ttc_match = abs(pred_ttc_val - gt_ttc_val_for_match) <= cfg.ttc_threshold
+                            if has_noun and gt_noun >= 0 and pred_noun_global is not None:
                                 n_total_Nd += 1
-                                if pred_noun_global == gt_noun and pred_bin == gt_bin:
+                                if pred_noun_global == gt_noun and ttc_match:
                                     n_correct_Nd += 1
-                            # All
+                            # All - Official Ego4D threshold
                             if (
-                                pred_bin is not None
-                                and has_noun and has_verb
+                                has_noun and has_verb
                                 and gt_noun >= 0 and gt_verb >= 0
                                 and pred_noun_global is not None and pred_verb_global is not None
                             ):
@@ -1056,7 +1061,7 @@ def evaluate(cfg: EvalConfig, rgtp_cfg: RGTPConfig, instr_cfg: Optional[Instrume
                                 if (
                                     pred_noun_global == gt_noun
                                     and pred_verb_global == gt_verb
-                                    and pred_bin == gt_bin
+                                    and ttc_match
                                 ):
                                     n_correct_All += 1
 
@@ -1094,8 +1099,12 @@ def evaluate(cfg: EvalConfig, rgtp_cfg: RGTPConfig, instr_cfg: Optional[Instrume
                                 and pred_verb_global_i is not None
                                 and pred_verb_global_i == gt_verb
                             )
-                            cond_Nd = cond_N and pred_bin_i is not None and pred_bin_i == gt_bin
-                            cond_All = cond_NV and pred_bin_i is not None and pred_bin_i == gt_bin
+                            # Official Ego4D TTC matching: |pred - gt| <= 0.25s
+                            pred_ttc_i = float(ttc_s[idx].item())
+                            gt_ttc_i = float(sample['ttc'][gt_idx].item()) if gt_idx < len(sample['ttc']) else 0.0
+                            ttc_match_i = abs(pred_ttc_i - gt_ttc_i) <= cfg.ttc_threshold
+                            cond_Nd = cond_N and ttc_match_i
+                            cond_All = cond_NV and ttc_match_i
 
                             if has_noun and gt_noun >= 0:
                                 top5_scores_N.append(score_i)

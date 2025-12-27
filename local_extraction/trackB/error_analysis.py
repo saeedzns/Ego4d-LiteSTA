@@ -102,12 +102,27 @@ def load_noun_names(path: Optional[Path]) -> Dict[int, str]:
     try:
         with path.open("r", encoding="utf-8") as f:
             data = json.load(f)
-        # Try to find noun taxonomy
+        
+        # Primary: check for noun_categories list (Ego4D format)
+        if "noun_categories" in data:
+            noun_names = {}
+            for cat in data["noun_categories"]:
+                nid = cat.get("id")
+                nname = cat.get("name", "")
+                if nid is not None:
+                    # Extract short name (first word before parentheses)
+                    short_name = nname.split("_(")[0] if "_(" in nname else nname.split("(")[0].strip()
+                    noun_names[int(nid)] = short_name
+            if noun_names:
+                print(f"[error_analysis] Loaded {len(noun_names)} noun names from noun_categories")
+                return noun_names
+        
+        # Fallback: Try to find noun taxonomy
         if "noun_classes" in data:
             return {int(k): v for k, v in data["noun_classes"].items()}
         if "taxonomy" in data and "noun" in data["taxonomy"]:
             return {i: n for i, n in enumerate(data["taxonomy"]["noun"])}
-        # Try to extract from annotations
+        # Fallback: Try to extract from annotations
         noun_names = {}
         for anno in data.get("annotations", []):
             for obj in anno.get("objects", []):
@@ -128,11 +143,26 @@ def load_verb_names(path: Optional[Path]) -> Dict[int, str]:
     try:
         with path.open("r", encoding="utf-8") as f:
             data = json.load(f)
+        
+        # Primary: check for verb_categories list (Ego4D format)
+        if "verb_categories" in data:
+            verb_names = {}
+            for cat in data["verb_categories"]:
+                vid = cat.get("id")
+                vname = cat.get("name", "")
+                if vid is not None:
+                    # Extract short name (first word before parentheses)
+                    short_name = vname.split("_(")[0] if "_(" in vname else vname.split("(")[0].strip()
+                    verb_names[int(vid)] = short_name
+            if verb_names:
+                print(f"[error_analysis] Loaded {len(verb_names)} verb names from verb_categories")
+                return verb_names
+        
         if "verb_classes" in data:
             return {int(k): v for k, v in data["verb_classes"].items()}
         if "taxonomy" in data and "verb" in data["taxonomy"]:
             return {i: v for i, v in enumerate(data["taxonomy"]["verb"])}
-        # Try to extract from annotations
+        # Fallback: Try to extract from annotations
         verb_names = {}
         for anno in data.get("annotations", []):
             vid = anno.get("verb_category_id")
@@ -420,8 +450,10 @@ def select_failure_cases(
     # Select top failures
     selected = failures[:count]
     
-    # Create gallery directory with detailed suffix
-    gallery_dir = output_dir / "failure_gallery_detailed"
+    # Create gallery directory (overwrite old)
+    gallery_dir = output_dir / "failure_gallery"
+    if gallery_dir.exists():
+        shutil.rmtree(gallery_dir)
     gallery_dir.mkdir(parents=True, exist_ok=True)
     
     # Create custom error overlays if PIL available
@@ -433,11 +465,11 @@ def select_failure_cases(
                 if not frame_path or not Path(frame_path).exists():
                     continue
                 
-                # Create custom error overlay with detailed filename
+                # Create custom error overlay with consistent filename
                 overlay_path = _create_error_overlay(
                     frame_path=Path(frame_path),
                     pred=pred,
-                    output_path=gallery_dir / f"error_detailed_{i+1:02d}.jpg",
+                    output_path=gallery_dir / f"failure_{i+1:02d}.jpg",
                     rank=i + 1,
                 )
                 if overlay_path:
@@ -446,45 +478,357 @@ def select_failure_cases(
             except Exception as e:
                 print(f"[error_analysis] Warning: Could not create overlay: {e}")
         
-        print(f"[error_analysis] Created {len(created)} detailed error overlays in {gallery_dir}")
+        print(f"[error_analysis] Created {len(created)} failure overlays in {gallery_dir}")
     else:
-        # Fallback: just copy existing overlays
-        copied = []
-        for i, pred in enumerate(selected):
-            uid = pred.get("uid", "")
-            frame_path = pred.get("frame_path", "")
-            
-            frame = ""
-            if frame_path:
-                import os
-                frame = os.path.splitext(os.path.basename(frame_path))[0]
-            
-            if uid and frame:
-                patterns = [
-                    f"{uid}_{frame}_overlay.jpg",
-                    f"{uid}_{frame}.jpg",
-                    f"{uid}_{frame}_overlay.png",
-                    f"{uid}_{frame}.png",
-                ]
-                
-                for pattern in patterns:
-                    src = overlays_dir / pattern
-                    if src.exists():
-                        dst = gallery_dir / f"failure_{i+1:02d}_{pattern}"
-                        try:
-                            shutil.copy(src, dst)
-                            pred["_overlay_copied"] = str(dst)
-                            copied.append(pred)
-                        except Exception as e:
-                            print(f"[error_analysis] Warning: Could not copy {src}: {e}")
-                        break
-        
-        print(f"[error_analysis] Copied {len(copied)} failure overlays to {gallery_dir}")
+        print(f"[error_analysis] PIL not available, skipping failure overlay creation")
     
     # Create summary text file with legend
     _create_failure_summary(selected, gallery_dir, noun_names, verb_names)
     
     return selected
+
+
+def select_success_cases(
+    predictions: List[Dict],
+    overlays_dir: Path,
+    output_dir: Path,
+    count: int = 20,
+    noun_names: Optional[Dict[int, str]] = None,
+    verb_names: Optional[Dict[int, str]] = None,
+) -> List[Dict]:
+    """Select and create custom overlays for best success cases (correct predictions)."""
+    successes = []
+    noun_names = noun_names or {}
+    verb_names = verb_names or {}
+    
+    # Score each prediction by "goodness" (fully correct predictions)
+    for pred in predictions:
+        try:
+            # Check if correct
+            gt_noun = int(pred.get("gt_noun_id", pred.get("gt_noun", -1)))
+            pred_noun = int(pred.get("pred_noun_id", pred.get("pred_noun", -1)))
+            is_noun_correct = (gt_noun == pred_noun) and gt_noun >= 0
+            
+            gt_verb = int(pred.get("gt_verb_id", pred.get("gt_verb", -1)))
+            pred_verb = int(pred.get("pred_verb_id", pred.get("pred_verb", -1)))
+            is_verb_correct = (gt_verb == pred_verb) and gt_verb >= 0
+            
+            ttc_error = pred.get("_ttc_error", 0)
+            if ttc_error is None:
+                ttc_error = 0
+            
+            # Check if TTC is within threshold (0.25s official)
+            is_ttc_correct = float(ttc_error) <= 0.25
+            
+            # Compute goodness score (higher is better)
+            goodness = 0
+            if is_noun_correct:
+                goodness += 2
+            if is_verb_correct:
+                goodness += 1
+            if is_ttc_correct:
+                goodness += 1
+            # Bonus for low TTC error
+            goodness += max(0, 1.0 - float(ttc_error))
+            
+            # Only include if at least noun is correct
+            if is_noun_correct:
+                pred["_goodness"] = goodness
+                pred["_is_noun_correct"] = is_noun_correct
+                pred["_is_verb_correct"] = is_verb_correct
+                pred["_is_ttc_correct"] = is_ttc_correct
+                pred["_gt_noun_name"] = noun_names.get(gt_noun, f"noun_{gt_noun}")
+                pred["_pred_noun_name"] = noun_names.get(pred_noun, f"noun_{pred_noun}")
+                pred["_gt_verb_name"] = verb_names.get(gt_verb, f"verb_{gt_verb}")
+                pred["_pred_verb_name"] = verb_names.get(pred_verb, f"verb_{pred_verb}")
+                pred["_ttc_error_s"] = float(ttc_error)
+                successes.append(pred)
+        except Exception as e:
+            pass
+    
+    # Sort by goodness (best first)
+    successes.sort(key=lambda x: -x.get("_goodness", 0))
+    
+    # Select top successes
+    selected = successes[:count]
+    
+    # Create gallery directory (overwrite old)
+    gallery_dir = output_dir / "success_gallery"
+    if gallery_dir.exists():
+        shutil.rmtree(gallery_dir)
+    gallery_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Create custom success overlays if PIL available
+    created = []
+    if HAS_PIL:
+        for i, pred in enumerate(selected):
+            try:
+                frame_path = pred.get("frame_path", "")
+                if not frame_path or not Path(frame_path).exists():
+                    continue
+                
+                # Create custom success overlay
+                overlay_path = _create_success_overlay(
+                    frame_path=Path(frame_path),
+                    pred=pred,
+                    output_path=gallery_dir / f"success_{i+1:02d}.jpg",
+                    rank=i + 1,
+                )
+                if overlay_path:
+                    pred["_overlay_created"] = str(overlay_path)
+                    created.append(pred)
+            except Exception as e:
+                print(f"[error_analysis] Warning: Could not create success overlay: {e}")
+        
+        print(f"[error_analysis] Created {len(created)} success overlays in {gallery_dir}")
+    else:
+        print(f"[error_analysis] PIL not available, skipping success overlay creation")
+    
+    # Create summary text file
+    _create_success_summary(selected, gallery_dir, noun_names, verb_names)
+    
+    return selected
+
+
+def _create_success_overlay(
+    frame_path: Path,
+    pred: Dict,
+    output_path: Path,
+    rank: int,
+) -> Optional[Path]:
+    """Create a custom success overlay with clear color coding and legend (same design as failures)."""
+    if not HAS_PIL:
+        return None
+    
+    try:
+        # Load image
+        img = Image.open(str(frame_path)).convert('RGB')
+        draw = ImageDraw.Draw(img)
+        W, H = img.size
+        
+        # Colors (RGB for PIL)
+        COLOR_GT = (46, 204, 113)       # Green - Ground Truth
+        COLOR_PRED_OK = (52, 152, 219)  # Blue - Correct prediction
+        COLOR_SUCCESS = (46, 204, 113)  # Green - Success marker
+        COLOR_PARTIAL = (255, 193, 7)   # Yellow - Partial success (noun ok, verb wrong)
+        
+        # Get box coordinates - support multiple formats
+        def get_pred_box(p):
+            if all(k in p for k in ["x1", "y1", "x2", "y2"]):
+                try:
+                    return [float(p["x1"]), float(p["y1"]), float(p["x2"]), float(p["y2"])]
+                except:
+                    pass
+            bbox_str = p.get("bbox", p.get("box", ""))
+            return parse_bbox_str(bbox_str)
+        
+        def get_gt_box(p):
+            if all(k in p for k in ["gt_x1", "gt_y1", "gt_x2", "gt_y2"]):
+                try:
+                    return [float(p["gt_x1"]), float(p["gt_y1"]), float(p["gt_x2"]), float(p["gt_y2"])]
+                except:
+                    pass
+            gt_bbox_str = p.get("gt_bbox", p.get("gt_box", ""))
+            return parse_bbox_str(gt_bbox_str)
+        
+        def parse_bbox_str(s):
+            if not s:
+                return None
+            try:
+                s = str(s).replace("[", "").replace("]", "").replace(" ", "")
+                parts = s.split(",")
+                if len(parts) >= 4:
+                    return [float(x) for x in parts[:4]]
+            except:
+                pass
+            return None
+        
+        def compute_iou(box1, box2):
+            """Compute IoU between two boxes [x1, y1, x2, y2]."""
+            if box1 is None or box2 is None:
+                return 0.0
+            x1 = max(box1[0], box2[0])
+            y1 = max(box1[1], box2[1])
+            x2 = min(box1[2], box2[2])
+            y2 = min(box1[3], box2[3])
+            inter = max(0, x2 - x1) * max(0, y2 - y1)
+            area1 = (box1[2] - box1[0]) * (box1[3] - box1[1])
+            area2 = (box2[2] - box2[0]) * (box2[3] - box2[1])
+            union = area1 + area2 - inter
+            return inter / union if union > 0 else 0.0
+        
+        pred_box = get_pred_box(pred)
+        gt_box = get_gt_box(pred)
+        
+        # Compute IoU between pred and GT
+        iou = compute_iou(pred_box, gt_box)
+        
+        # Get correctness info
+        is_noun_correct = pred.get("_is_noun_correct", False)
+        is_verb_correct = pred.get("_is_verb_correct", False)
+        is_ttc_correct = pred.get("_is_ttc_correct", False)
+        
+        # Get names
+        gt_noun_name = pred.get("_gt_noun_name", "?")
+        pred_noun_name = pred.get("_pred_noun_name", "?")
+        gt_verb_name = pred.get("_gt_verb_name", "?")
+        pred_verb_name = pred.get("_pred_verb_name", "?")
+        
+        # TTC info
+        gt_ttc = pred.get("gt_ttc", pred.get("ttc_gt_s", pred.get("ttc_gt", "?")))
+        pred_ttc = pred.get("pred_ttc", pred.get("ttc_pred_s", pred.get("ttc_pred", "?")))
+        try:
+            gt_ttc_f = float(gt_ttc)
+            pred_ttc_f = float(pred_ttc)
+            ttc_err = abs(pred_ttc_f - gt_ttc_f)
+            gt_ttc_str = f"{gt_ttc_f:.2f}s"
+            pred_ttc_str = f"{pred_ttc_f:.2f}s"
+        except:
+            gt_ttc_str = str(gt_ttc)
+            pred_ttc_str = str(pred_ttc)
+            ttc_err = pred.get("_ttc_error_s", 0)
+        
+        # Draw ground truth box with label (GREEN)
+        if gt_box:
+            x1, y1, x2, y2 = gt_box
+            draw.rectangle([x1, y1, x2, y2], outline=COLOR_GT, width=4)
+            
+            # Build GT label
+            gt_label = f"GT: {gt_noun_name}, {gt_verb_name}, ttc={gt_ttc_str}"
+            
+            # Draw label above box with background
+            label_y = max(0, y1 - 20)
+            text_bbox = draw.textbbox((x1, label_y), gt_label)
+            draw.rectangle([text_bbox[0]-2, text_bbox[1]-2, text_bbox[2]+2, text_bbox[3]+2], 
+                          fill=(0, 0, 0, 200))
+            draw.text((x1, label_y), gt_label, fill=COLOR_GT)
+        
+        # Draw predicted box with label (BLUE for correct)
+        if pred_box:
+            x1, y1, x2, y2 = pred_box
+            
+            # Choose color based on full correctness
+            if is_noun_correct and is_verb_correct:
+                color = COLOR_PRED_OK  # Blue - fully correct
+            else:
+                color = COLOR_PARTIAL  # Yellow - partial (noun ok, verb wrong)
+            
+            draw.rectangle([x1, y1, x2, y2], outline=color, width=3)
+            
+            # Build prediction label with success markers
+            noun_part = f"{pred_noun_name} ✓"
+            verb_part = f"{pred_verb_name}"
+            if is_verb_correct:
+                verb_part += " ✓"
+            else:
+                verb_part += " ✗"
+            
+            pred_label = f"PRED: {noun_part}, {verb_part}, ttc={pred_ttc_str}"
+            
+            # Draw label below box with background
+            label_y = min(H - 20, y2 + 5)
+            text_bbox = draw.textbbox((x1, label_y), pred_label)
+            draw.rectangle([text_bbox[0]-2, text_bbox[1]-2, text_bbox[2]+2, text_bbox[3]+2], 
+                          fill=(0, 0, 0, 200))
+            draw.text((x1, label_y), pred_label, fill=color)
+        
+        # Draw rank, IoU, and summary in top-left corner
+        goodness = pred.get("_goodness", 0)
+        summary_lines = [f"✓ SUCCESS #{rank}  IoU={iou:.2f}"]
+        summary_lines.append(f"Goodness: {goodness:.2f}")
+        summary_lines.append(f"Noun: {pred_noun_name} ✓")
+        verb_mark = "✓" if is_verb_correct else "✗"
+        summary_lines.append(f"Verb: {pred_verb_name} {verb_mark}")
+        ttc_mark = "✓" if is_ttc_correct else ""
+        summary_lines.append(f"TTC err: {ttc_err:.3f}s {ttc_mark}")
+        
+        y_pos = 10
+        for line in summary_lines:
+            text_bbox = draw.textbbox((10, y_pos), line)
+            draw.rectangle([text_bbox[0]-2, text_bbox[1]-2, text_bbox[2]+2, text_bbox[3]+2], 
+                          fill=(0, 0, 0, 200))
+            # First line in green (SUCCESS), rest in white
+            text_color = COLOR_SUCCESS if y_pos == 10 else (255, 255, 255)
+            draw.text((10, y_pos), line, fill=text_color)
+            y_pos += 20
+        
+        # Draw legend in top-right corner
+        legend_items = [
+            ("■ GT (green)", COLOR_GT),
+            ("■ Pred OK (blue)", COLOR_PRED_OK),
+            ("■ Partial OK (yellow)", COLOR_PARTIAL),
+            ("✓ = Correct", COLOR_SUCCESS),
+        ]
+        legend_x = W - 160
+        legend_y = 10
+        for label, color in legend_items:
+            text_bbox = draw.textbbox((legend_x, legend_y), label)
+            draw.rectangle([text_bbox[0]-2, text_bbox[1]-2, text_bbox[2]+2, text_bbox[3]+2], 
+                          fill=(0, 0, 0, 200))
+            draw.text((legend_x, legend_y), label, fill=color)
+            legend_y += 18
+        
+        # Save
+        img.save(str(output_path), quality=95)
+        return output_path
+        
+    except Exception as e:
+        print(f"[error_analysis] Error creating success overlay: {e}")
+        return None
+
+
+def _create_success_summary(
+    successes: List[Dict],
+    output_dir: Path,
+    noun_names: Dict[int, str],
+    verb_names: Dict[int, str],
+) -> None:
+    """Create a text summary of all success cases (same format as failure summary)."""
+    summary_path = output_dir / "success_summary.txt"
+    
+    lines = [
+        "=" * 70,
+        "SUCCESS CASE GALLERY - SUMMARY",
+        "=" * 70,
+        "",
+        "Legend:",
+        "  - Green box: Ground Truth (GT)",
+        "  - Blue box: Correct prediction (noun + verb correct)",
+        "  - Yellow box: Partial success (noun correct, verb wrong)",
+        "  - ✓ = Correct prediction",
+        "  - TTC threshold = 0.25s (official Ego4D)",
+        "",
+        "Files are named: success_01.jpg, success_02.jpg, etc.",
+        "Ranked by 'goodness' score (noun +2, verb +1, TTC<0.25s +1)",
+        "",
+        "-" * 70,
+        "",
+    ]
+    
+    for i, s in enumerate(successes):
+        goodness = s.get("_goodness", 0)
+        lines.append(f"#{i+1:02d} - goodness={goodness:.2f}")
+        lines.append(f"    UID: {s.get('uid', '?')}")
+        lines.append(f"    Frame: {s.get('frame_path', '?')}")
+        
+        gt_noun = s.get("_gt_noun_name", "?")
+        gt_verb = s.get("_gt_verb_name", "?")
+        pred_verb = s.get("_pred_verb_name", "?")
+        is_verb_correct = s.get("_is_verb_correct", False)
+        is_ttc_correct = s.get("_is_ttc_correct", False)
+        ttc_err = s.get("_ttc_error_s", 0)
+        
+        lines.append(f"    Noun: {gt_noun} ✓ (CORRECT)")
+        verb_status = "CORRECT" if is_verb_correct else f"WRONG (pred: {pred_verb})"
+        lines.append(f"    Verb: {gt_verb} - {verb_status}")
+        ttc_status = "OK (<0.25s)" if is_ttc_correct else "EXCEEDED"
+        lines.append(f"    TTC error: {ttc_err:.3f}s - {ttc_status}")
+        lines.append("")
+    
+    with summary_path.open("w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+    
+    print(f"[error_analysis] Saved success summary: {summary_path}")
 
 
 def _create_error_overlay(
@@ -1098,6 +1442,32 @@ def main():
                     print(f"          Noun: {f.get('_pred_noun_name')} (should be: {f.get('_gt_noun_name')})")
                 if f.get("_is_verb_wrong"):
                     print(f"          Verb: {f.get('_pred_verb_name')} (should be: {f.get('_gt_verb_name')})")
+    else:
+        print("   Skipped (no predictions or --no_gallery)")
+    
+    # 7. Success case gallery
+    print("\n7. SUCCESS CASE GALLERY")
+    print("-" * 40)
+    if predictions and not args.no_gallery:
+        success_cases = select_success_cases(
+            predictions, cfg.overlays_dir, cfg.output_dir, cfg.failure_gallery_count,
+            noun_names=noun_names, verb_names=verb_names
+        )
+        results["success_cases_count"] = len(success_cases)
+        
+        print(f"   Selected {len(success_cases)} best success cases")
+        if success_cases:
+            print("\n   Top 5 successes:")
+            for i, s in enumerate(success_cases[:5]):
+                print(f"      {i+1}. uid={s.get('uid', '?')}, frame={s.get('frame', '?')}, "
+                      f"goodness={s.get('_goodness', 0):.2f}")
+                print(f"          Noun: {s.get('_gt_noun_name')} ✓")
+                verb_mark = "✓" if s.get("_is_verb_correct") else "✗"
+                print(f"          Verb: {s.get('_gt_verb_name')} {verb_mark}")
+                ttc_mark = "✓" if s.get("_is_ttc_correct") else ""
+                print(f"          TTC error: {s.get('_ttc_error_s', 0):.3f}s {ttc_mark}")
+        else:
+            print("   No correct predictions found!")
     else:
         print("   Skipped (no predictions or --no_gallery)")
     

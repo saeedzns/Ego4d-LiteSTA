@@ -59,7 +59,7 @@ IMPORTANT_KEYS_ORDER = [
 ]
 
 
-def load_metrics(runs_dir: Path) -> List[MetricPoint]:
+def load_metrics(runs_dir: Path, start_date: Optional[datetime] = None, end_date: Optional[datetime] = None) -> List[MetricPoint]:
     metrics_dir = runs_dir / "metrics"
     if not metrics_dir.exists():
         raise FileNotFoundError(f"metrics directory not found: {metrics_dir}")
@@ -79,6 +79,13 @@ def load_metrics(runs_dir: Path) -> List[MetricPoint]:
             dt = datetime.strptime(match.group(1) + match.group(2), '%Y%m%d%H%M%S')
         else:
             dt = datetime.fromtimestamp(path.stat().st_mtime)
+        
+        # Apply date range filter
+        if start_date and dt < start_date:
+            continue
+        if end_date and dt > end_date:
+            continue
+        
         values: Dict[str, float] = {}
         for k, v in obj.items():
             if isinstance(v, (int, float)):
@@ -176,9 +183,9 @@ def plot_metrics(points: List[MetricPoint], out_dir: Path) -> None:
     ax_legend.legend(loc="center", fontsize=8, frameon=True, ncol=2)
     ax_legend.set_title("Legend: Eval Index → Checkpoint", fontsize=10)
 
-    fig.tight_layout()
+    fig.tight_layout(rect=[0, 0.03, 1, 0.97])  # Leave space for legend
     out_path = out_dir / "trackB_metrics_over_time.png"
-    fig.savefig(out_path, dpi=150)
+    fig.savefig(out_path, dpi=150, bbox_inches='tight')
     plt.close(fig)
     print(f"[trackB.plots] Saved metric curves + legend → {out_path}")
 
@@ -231,9 +238,9 @@ def plot_metrics(points: List[MetricPoint], out_dir: Path) -> None:
         ax_legend2.legend(loc="center", fontsize=8, frameon=True, ncol=2)
         ax_legend2.set_title("Legend: Eval Index → Checkpoint", fontsize=10)
 
-        fig2.tight_layout()
+        fig2.tight_layout(rect=[0, 0.03, 1, 0.97])  # Leave space for legend
         out_top5 = out_dir / "trackB_top5_semantic_percent.png"
-        fig2.savefig(out_top5, dpi=150)
+        fig2.savefig(out_top5, dpi=150, bbox_inches='tight')
         plt.close(fig2)
         print(f"[trackB.plots] Saved top-5 semantic mAP subplot grid → {out_top5}")
 
@@ -265,12 +272,48 @@ def main() -> None:
         default=None,
         help="Output directory for plots (default: <runs_dir>/plots).",
     )
+    ap.add_argument(
+        "--start_date",
+        type=str,
+        default=None,
+        help="Start date filter (format: YYYYMMDD or YYYYMMDD_HHMMSS). Only plot metrics from this date onwards.",
+    )
+    ap.add_argument(
+        "--end_date",
+        type=str,
+        default=None,
+        help="End date filter (format: YYYYMMDD or YYYYMMDD_HHMMSS). Only plot metrics up to this date.",
+    )
     args = ap.parse_args()
 
     runs_dir = Path(args.runs_dir)
     out_dir = Path(args.out_dir) if args.out_dir is not None else runs_dir / "plots"
 
-    points = load_metrics(runs_dir)
+    # Parse date filters
+    start_date = None
+    end_date = None
+    if args.start_date:
+        try:
+            if len(args.start_date) == 8:  # YYYYMMDD
+                start_date = datetime.strptime(args.start_date, '%Y%m%d')
+            else:  # YYYYMMDD_HHMMSS
+                start_date = datetime.strptime(args.start_date, '%Y%m%d_%H%M%S')
+            print(f"[trackB.plots] Filtering from: {start_date}")
+        except ValueError as e:
+            print(f"[trackB.plots] Invalid start_date format: {e}")
+            return
+    if args.end_date:
+        try:
+            if len(args.end_date) == 8:  # YYYYMMDD
+                end_date = datetime.strptime(args.end_date, '%Y%m%d').replace(hour=23, minute=59, second=59)
+            else:  # YYYYMMDD_HHMMSS
+                end_date = datetime.strptime(args.end_date, '%Y%m%d_%H%M%S')
+            print(f"[trackB.plots] Filtering to: {end_date}")
+        except ValueError as e:
+            print(f"[trackB.plots] Invalid end_date format: {e}")
+            return
+
+    points = load_metrics(runs_dir, start_date=start_date, end_date=end_date)
     if not points:
         print(f"[trackB.plots] No metrics_val_*.json found under {runs_dir}/metrics.")
         return

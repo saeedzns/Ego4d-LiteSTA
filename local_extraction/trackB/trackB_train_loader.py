@@ -179,6 +179,10 @@ class TrainConfig:
     loss_w_verb: float = _cfg.get('multi_task.loss_weights.verb', 0.25)
     loss_w_ttc: float = _cfg.get('multi_task.loss_weights.ttc', 1.0)
     
+    # Class balancing for noun/verb losses (to address class imbalance)
+    use_class_weights: bool = _cfg.get('multi_task.use_class_weights', True)
+    class_weight_alpha: float = _cfg.get('multi_task.class_weight_alpha', 0.5)  # 0=uniform, 1=full inverse freq
+    
     # Reproducibility
     seed: int = _cfg.get('seed', 42)
 
@@ -918,6 +922,64 @@ def main():
     except TypeError:
         ce = nn.CrossEntropyLoss()
     l1 = nn.L1Loss(reduction='none')
+    
+    # Compute class weights for noun/verb to address class imbalance
+    # Use inverse frequency weighting with smoothing
+    def compute_class_weights(manifest_path, field, id_list, device, alpha=0.5):
+        """Compute inverse frequency weights for classes.
+        alpha: smoothing factor (0=uniform, 1=full inverse frequency)
+        """
+        from collections import Counter
+        counts = Counter()
+        for line in Path(manifest_path).read_text().splitlines():
+            r = json.loads(line)
+            if r.get('is_positive', False):
+                cid = r.get(field, -1)
+                if cid >= 0:
+                    counts[cid] += 1
+        
+        if not counts or not id_list:
+            return None
+        
+        # Build weight tensor
+        weights = torch.ones(len(id_list), device=device)
+        total = sum(counts.values())
+        for local_idx, global_id in enumerate(id_list):
+            cnt = counts.get(global_id, 1)
+            # Inverse frequency with smoothing
+            freq = cnt / total
+            inv_freq = 1.0 / (freq + 1e-6)
+            # Blend with uniform
+            weights[local_idx] = alpha * inv_freq + (1 - alpha) * 1.0
+        
+        # Normalize so mean weight = 1
+        weights = weights / weights.mean()
+        return weights
+    
+    # Create weighted CE losses for noun/verb
+    use_class_weights = getattr(cfg, 'use_class_weights', True)  # Enable by default
+    class_weight_alpha = getattr(cfg, 'class_weight_alpha', 0.5)  # 0=uniform, 0.5=moderate, 1=full inverse freq
+    ce_noun = ce  # fallback
+    ce_verb = ce  # fallback
+    
+    if use_class_weights and cfg.use_multi_task_labels and noun_id_list and verb_id_list:
+        print(f"[trackB.train] Computing class weights for {len(noun_id_list)} nouns, {len(verb_id_list)} verbs (alpha={class_weight_alpha})...")
+        noun_weights = compute_class_weights(train_manifest_path, 'noun_id', noun_id_list, device, alpha=class_weight_alpha)
+        verb_weights = compute_class_weights(train_manifest_path, 'verb_id', verb_id_list, device, alpha=class_weight_alpha)
+        
+        if noun_weights is not None:
+            try:
+                ce_noun = nn.CrossEntropyLoss(weight=noun_weights, label_smoothing=cfg.label_smoothing)
+            except TypeError:
+                ce_noun = nn.CrossEntropyLoss(weight=noun_weights)
+            print(f"[trackB.train] Noun weights: min={noun_weights.min():.2f}, max={noun_weights.max():.2f}, mean={noun_weights.mean():.2f}")
+        
+        if verb_weights is not None:
+            try:
+                ce_verb = nn.CrossEntropyLoss(weight=verb_weights, label_smoothing=cfg.label_smoothing)
+            except TypeError:
+                ce_verb = nn.CrossEntropyLoss(weight=verb_weights)
+            print(f"[trackB.train] Verb weights: min={verb_weights.min():.2f}, max={verb_weights.max():.2f}, mean={verb_weights.mean():.2f}")
 
     # DataLoader (keep workers=0 as dataset holds model references for tokenization)
     batch_size = cfg.batch_size if cfg.mode == 'main' else cfg.batch_size
@@ -1052,7 +1114,7 @@ def main():
                         noun_targets = noun_pad.reshape(Bn * Nn)
                         pos_mask = (labels_flat == 1)
                         if pos_mask.any():
-                            loss_noun = ce(noun_flat[pos_mask], noun_targets[pos_mask])
+                            loss_noun = ce_noun(noun_flat[pos_mask], noun_targets[pos_mask])
                     if cfg.use_multi_task_labels and verb_pad is not None and 'verb_logits' in out:
                         verb_logits = out['verb_logits']  # (B,N,Cv)
                         Bv, Nv, Cv = verb_logits.shape
@@ -1060,7 +1122,7 @@ def main():
                         verb_targets = verb_pad.reshape(Bv * Nv)
                         pos_mask = (labels_flat == 1)
                         if pos_mask.any():
-                            loss_verb = ce(verb_flat[pos_mask], verb_targets[pos_mask])
+                            loss_verb = ce_verb(verb_flat[pos_mask], verb_targets[pos_mask])
                     # Total loss with weights
                     loss = (
                         cfg.loss_w_next * loss_next

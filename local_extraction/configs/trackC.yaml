@@ -118,7 +118,7 @@ evaluation:
   
   # CLIP re-ranking (match Track B for fair comparison)
   clip_rerank:
-    enabled: false
+    enabled: true
     # Options:
     # - true   # use CLIP (enable for fair comparison with Track B)
     # - false  # disable (default for baseline)
@@ -132,6 +132,13 @@ evaluation:
     # - 0.0  # no CLIP influence
     # - 0.3  # default (30% CLIP, 70% model)
     # - 0.6  # strong CLIP influence
+  
+  # Official Ego4D TTC threshold for N+δ and All metrics
+  # Per benchmark: a TTC prediction is correct if |pred - gt| <= threshold
+  ttc_threshold: 0.25
+  # Options:
+  # - 0.25  # official Ego4D benchmark threshold (seconds)
+  # - 0.5   # more lenient
 
 # -----------------------------------------------------------------------------
 # Instrumentation (Latency/VRAM/FLOPs Profiling)

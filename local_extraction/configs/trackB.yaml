@@ -201,6 +201,20 @@ multi_task:
   # - {next_active: 1.0, noun: 0.5, verb: 0.5, ttc: 1.0}  # downweight noun/verb
   # - {next_active: 1.0, noun: 1.0, verb: 1.0, ttc: 0.3}  # downweight TTC
 
+  # Class balancing (addresses class imbalance in noun/verb)
+  use_class_weights: true
+  # Options:
+  # - true   # enable inverse-frequency weighting for noun/verb losses
+  # - false  # use uniform weights (may cause class collapse to dominant classes)
+  
+  class_weight_alpha: 0.5
+  # Options (smoothing factor: 0=uniform, 1=full inverse frequency):
+  # - 0.0   # no class balancing (uniform weights)
+  # - 0.3   # light balancing
+  # - 0.5   # moderate balancing (recommended)
+  # - 0.7   # strong balancing (may overcorrect)
+  # - 1.0   # full inverse frequency (most aggressive)
+
 # -----------------------------------------------------------------------------
 # Training Configuration
 # -----------------------------------------------------------------------------
@@ -399,6 +413,13 @@ evaluation:
     # - 0.3  # default
     # - 0.6  # strong CLIP influence
     # - 0.9  # CLIP-dominated (slow and risky)
+  
+  # Official Ego4D TTC threshold for N+δ and All metrics
+  # Per benchmark: a TTC prediction is correct if |pred - gt| <= threshold
+  ttc_threshold: 0.25
+  # Options:
+  # - 0.25  # official Ego4D benchmark threshold (seconds)
+  # - 0.5   # more lenient
 
 # -----------------------------------------------------------------------------
 # Data Sources
