@@ -57,11 +57,22 @@ def _parse_args():
     parser.add_argument('--checkpoint', type=str, default=None,
                         help='Override checkpoint path')
     parser.add_argument('--no_pruning', action='store_true',
-                        help='Disable pruning (baseline mode)')
+                        help='Disable pruning (baseline mode, same as --rgtp off)')
+    parser.add_argument('--rgtp', type=str, default=None, choices=['on', 'off'],
+                        help='Enable/disable RGTP candidate pruning (overrides config)')
     parser.add_argument('--hotspot', type=str, default=None, choices=['on', 'off'],
                         help='Enable/disable hotspot priors (overrides config)')
     parser.add_argument('--clip', type=str, default=None, choices=['on', 'off'],
                         help='Enable/disable CLIP re-ranking (overrides config)')
+    # Efficiency options (real speedup)
+    parser.add_argument('--frame_subsample', type=str, default=None, choices=['on', 'off'],
+                        help='Enable/disable temporal frame subsampling (overrides config)')
+    parser.add_argument('--keep_frames', type=int, default=None,
+                        help='Number of frames to keep when subsampling (default: 4)')
+    parser.add_argument('--token_prune', type=str, default=None, choices=['on', 'off'],
+                        help='Enable/disable token pruning before fusion (overrides config)')
+    parser.add_argument('--token_prune_rate', type=float, default=None,
+                        help='Token pruning rate (0.0-0.95, default: 0.3)')
     args, _unknown = parser.parse_known_args()
     return args
 
@@ -227,6 +238,57 @@ class RuntimeConfig:
     bench_samples: int = _cfg_get_int_any(['instrumentation.bench_samples'], 1)  # micro-benchmark samples
 
 
+# -----------------------------------------------------------------------------
+# Efficiency Config — Real Speedup Features
+# -----------------------------------------------------------------------------
+@dataclass
+class FrameSubsampleConfig:
+    """Temporal frame subsampling configuration."""
+    enabled: bool = _cfg.get('efficiency.frame_subsample.enabled', False)
+    keep_frames: int = _cfg.get('efficiency.frame_subsample.keep_frames', 4)
+    strategy: str = _cfg.get('efficiency.frame_subsample.strategy', 'uniform')
+    
+    def __post_init__(self):
+        valid_strategies = ('uniform', 'first', 'last', 'motion')
+        if self.strategy not in valid_strategies:
+            raise ValueError(f"frame_subsample.strategy must be one of {valid_strategies}, got '{self.strategy}'")
+
+
+@dataclass
+class TokenPruneBeforeFusionConfig:
+    """Token pruning before fusion configuration."""
+    enabled: bool = _cfg.get('efficiency.token_prune_before_fusion.enabled', False)
+    rate: float = _cfg.get('efficiency.token_prune_before_fusion.rate', 0.3)
+    min_keep: int = _cfg.get('efficiency.token_prune_before_fusion.min_keep', 49)
+    strategy: str = _cfg.get('efficiency.token_prune_before_fusion.strategy', 'magnitude')
+    
+    def keep_count(self, num_tokens: int) -> int:
+        """Calculate number of tokens to keep."""
+        if not self.enabled:
+            return num_tokens
+        rate = min(max(self.rate, 0.0), 0.95)
+        keep = num_tokens - int(round(num_tokens * rate))
+        return max(self.min_keep, min(num_tokens, keep))
+    
+    def __post_init__(self):
+        valid_strategies = ('magnitude', 'variance', 'attention', 'random')
+        if self.strategy not in valid_strategies:
+            raise ValueError(f"token_prune_before_fusion.strategy must be one of {valid_strategies}, got '{self.strategy}'")
+
+
+@dataclass
+class EfficiencyConfig:
+    """Combined efficiency configuration."""
+    frame_subsample: FrameSubsampleConfig = None
+    token_prune: TokenPruneBeforeFusionConfig = None
+    
+    def __post_init__(self):
+        if self.frame_subsample is None:
+            self.frame_subsample = FrameSubsampleConfig()
+        if self.token_prune is None:
+            self.token_prune = TokenPruneBeforeFusionConfig()
+
+
 @dataclass
 class InstrumentationConfig:
     enabled: bool = True
@@ -269,6 +331,140 @@ def _serialize_cfg(cfg: Optional[Any]) -> Optional[Dict[str, Any]]:
         else:
             out[k] = v
     return out
+
+
+# -----------------------------------------------------------------------------
+# Efficiency Helper Functions — Real Speedup
+# -----------------------------------------------------------------------------
+
+def _subsample_frames(
+    vid_tokens: torch.Tensor,
+    cfg: FrameSubsampleConfig,
+) -> torch.Tensor:
+    """Subsample temporal frames from video tokens.
+    
+    Args:
+        vid_tokens: Video tokens of shape (T, N, C) or (B, T, N, C)
+        cfg: Frame subsampling configuration
+        
+    Returns:
+        Subsampled video tokens with reduced T dimension
+    """
+    if not cfg.enabled:
+        return vid_tokens
+    
+    # Handle different input shapes
+    squeeze_batch = False
+    if vid_tokens.dim() == 3:
+        vid_tokens = vid_tokens.unsqueeze(0)  # Add batch dim: (T, N, C) -> (1, T, N, C)
+        squeeze_batch = True
+    
+    B, T, N, C = vid_tokens.shape
+    keep_frames = min(cfg.keep_frames, T)
+    
+    if keep_frames >= T:
+        return vid_tokens.squeeze(0) if squeeze_batch else vid_tokens
+    
+    if cfg.strategy == 'uniform':
+        # Evenly spaced frame indices
+        indices = torch.linspace(0, T - 1, keep_frames, device=vid_tokens.device).long()
+    elif cfg.strategy == 'first':
+        # First N frames
+        indices = torch.arange(keep_frames, device=vid_tokens.device)
+    elif cfg.strategy == 'last':
+        # Last N frames (closest to action moment)
+        indices = torch.arange(T - keep_frames, T, device=vid_tokens.device)
+    elif cfg.strategy == 'motion':
+        # Select frames with highest motion energy (frame difference)
+        # More expensive but can be more informative
+        if T < 2:
+            indices = torch.arange(T, device=vid_tokens.device)
+        else:
+            # Compute frame-to-frame differences
+            diffs = (vid_tokens[:, 1:] - vid_tokens[:, :-1]).pow(2).mean(dim=(2, 3))  # (B, T-1)
+            # Pad first frame with zero motion
+            motion = torch.cat([torch.zeros(B, 1, device=vid_tokens.device), diffs], dim=1)  # (B, T)
+            # Average across batch and select top-K frames
+            motion_avg = motion.mean(dim=0)  # (T,)
+            # Always include last frame (action moment) plus top motion frames
+            _, top_indices = torch.topk(motion_avg[:-1], min(keep_frames - 1, T - 1))
+            indices = torch.cat([top_indices, torch.tensor([T - 1], device=vid_tokens.device)])
+            indices = indices.sort().values
+    else:
+        # Fallback to uniform
+        indices = torch.linspace(0, T - 1, keep_frames, device=vid_tokens.device).long()
+    
+    subsampled = vid_tokens[:, indices]  # (B, keep_frames, N, C)
+    return subsampled.squeeze(0) if squeeze_batch else subsampled
+
+
+def _prune_tokens_before_fusion(
+    img_tokens: torch.Tensor,
+    vid_tokens: torch.Tensor,
+    cfg: TokenPruneBeforeFusionConfig,
+) -> Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
+    """Prune spatial tokens before fusion to reduce FGTP+DualCA cost.
+    
+    Args:
+        img_tokens: Image tokens of shape (B, N, C)
+        vid_tokens: Video tokens of shape (B, T, N, C)
+        cfg: Token pruning configuration
+        
+    Returns:
+        Tuple of (pruned_img_tokens, pruned_vid_tokens, keep_indices)
+        keep_indices can be used later to map back to original spatial positions
+    """
+    if not cfg.enabled:
+        return img_tokens, vid_tokens, None
+    
+    B, N, C = img_tokens.shape
+    keep_count = cfg.keep_count(N)
+    
+    if keep_count >= N:
+        return img_tokens, vid_tokens, None
+    
+    # Compute importance scores for each spatial token
+    if cfg.strategy == 'magnitude':
+        # L2 norm of image tokens (fast, captures feature strength)
+        scores = img_tokens.pow(2).sum(dim=-1)  # (B, N)
+    elif cfg.strategy == 'variance':
+        # Variance across channels (captures token diversity)
+        scores = img_tokens.var(dim=-1)  # (B, N)
+    elif cfg.strategy == 'attention':
+        # Self-attention based importance (more expensive)
+        # Approximate with dot-product similarity to mean token
+        mean_token = img_tokens.mean(dim=1, keepdim=True)  # (B, 1, C)
+        scores = torch.bmm(img_tokens, mean_token.transpose(1, 2)).squeeze(-1)  # (B, N)
+    elif cfg.strategy == 'random':
+        # Random pruning (ablation baseline)
+        scores = torch.rand(B, N, device=img_tokens.device)
+    else:
+        # Fallback to magnitude
+        scores = img_tokens.pow(2).sum(dim=-1)
+    
+    # Select top-K tokens to keep
+    _, keep_indices = torch.topk(scores, keep_count, dim=1, sorted=False)  # (B, keep_count)
+    keep_indices = keep_indices.sort(dim=1).values  # Sort for spatial coherence
+    
+    # Gather kept tokens for image
+    batch_indices = torch.arange(B, device=img_tokens.device).unsqueeze(1).expand(-1, keep_count)
+    pruned_img = img_tokens[batch_indices, keep_indices]  # (B, keep_count, C)
+    
+    # Gather kept tokens for video (same spatial positions across all frames)
+    if vid_tokens.dim() == 4:
+        B_v, T, N_v, C_v = vid_tokens.shape
+        # Expand keep_indices for all frames
+        keep_indices_vid = keep_indices.unsqueeze(1).expand(-1, T, -1)  # (B, T, keep_count)
+        batch_indices_vid = torch.arange(B_v, device=vid_tokens.device).view(B_v, 1, 1).expand(-1, T, keep_count)
+        frame_indices = torch.arange(T, device=vid_tokens.device).view(1, T, 1).expand(B_v, -1, keep_count)
+        pruned_vid = vid_tokens[batch_indices_vid, frame_indices, keep_indices_vid]  # (B, T, keep_count, C)
+    else:
+        # Handle 3D case (T, N, C)
+        T, N_v, C_v = vid_tokens.shape
+        keep_idx = keep_indices[0] if keep_indices.dim() > 1 else keep_indices  # Use first batch's indices
+        pruned_vid = vid_tokens[:, keep_idx]  # (T, keep_count, C)
+    
+    return pruned_img, pruned_vid, keep_indices
 
 
 # ------------------------------ Helpers -----------------------------
@@ -596,10 +792,18 @@ def _metrics_from_logits(
 
 # ------------------------------ Main Eval ------------------------------
 
-def evaluate(cfg: EvalConfig, rgtp_cfg: RGTPConfig, instr_cfg: Optional[InstrumentationConfig] = None) -> Dict[str, Any]:
+def evaluate(cfg: EvalConfig, rgtp_cfg: RGTPConfig, instr_cfg: Optional[InstrumentationConfig] = None, eff_cfg: Optional[EfficiencyConfig] = None) -> Dict[str, Any]:
     device = TokenizerConfig().device
     is_cuda = device.startswith("cuda")
     instr = instr_cfg or InstrumentationConfig()
+    eff = eff_cfg or EfficiencyConfig()
+    
+    # Log efficiency settings
+    if eff.frame_subsample.enabled:
+        print(f"[trackC] Frame subsampling ENABLED: keep_frames={eff.frame_subsample.keep_frames}, strategy={eff.frame_subsample.strategy}")
+    if eff.token_prune.enabled:
+        print(f"[trackC] Token pruning before fusion ENABLED: rate={eff.token_prune.rate:.2f}, min_keep={eff.token_prune.min_keep}, strategy={eff.token_prune.strategy}")
+    
     if instr.enabled and is_cuda and instr.record_vram:
         try:
             torch.cuda.reset_peak_memory_stats(device)
@@ -783,18 +987,49 @@ def evaluate(cfg: EvalConfig, rgtp_cfg: RGTPConfig, instr_cfg: Optional[Instrume
                 vid_tok = sample['vid_tokens'].to(device)
                 if vid_tok.numel() == 0:
                     vid_tok = img_tok.unsqueeze(0)
+                
+                # === EFFICIENCY: Frame Subsampling (before projection) ===
+                # Reduces T dimension, which linearly reduces FGTP cost
+                if eff.frame_subsample.enabled:
+                    vid_tok = _subsample_frames(vid_tok, eff.frame_subsample)
+                
                 img_proj = projector(img_tok).unsqueeze(0)
                 vid_proj = projector(vid_tok).unsqueeze(0)
-
+                
+                # === EFFICIENCY: Token Pruning Before Fusion ===
+                # Reduces N (spatial tokens), which quadratically reduces attention cost
+                token_keep_indices = None
+                original_hw = sample['hw']
+                if eff.token_prune.enabled:
+                    img_proj, vid_proj, token_keep_indices = _prune_tokens_before_fusion(
+                        img_proj, vid_proj, eff.token_prune
+                    )
+                    # Update hw for ROI pooling (approximate as sqrt of kept tokens)
+                    kept_n = img_proj.shape[1]
+                    approx_side = int(math.sqrt(kept_n))
+                    # Store original hw for ROI computation, we'll handle this in pooling
+                
                 fused_img, fused_vid = fusion(img_proj, vid_proj)
 
                 pooled_img: List[torch.Tensor] = []
                 pooled_vid: List[torch.Tensor] = []
                 fused_img_cpu = fused_img[0].detach().cpu()
                 fused_vid_cpu = fused_vid[0].detach().cpu()
-                for box in sample['bboxes']:
-                    pooled_img.append(roi_pool_tokens_mean(sample['hw'], fused_img_cpu, box, sample['image_size']).to(device))
-                    pooled_vid.append(roi_pool_tokens_mean(sample['hw'], fused_vid_cpu, box, sample['image_size']).to(device))
+                
+                # When tokens are pruned, we can't do proper spatial ROI pooling
+                # because the grid structure is lost. Use global pooling instead.
+                if token_keep_indices is not None:
+                    # Global average pooling over all kept tokens for each candidate
+                    global_img_pool = fused_img_cpu.mean(dim=0)  # (C,)
+                    global_vid_pool = fused_vid_cpu.mean(dim=0)  # (C,)
+                    for _ in sample['bboxes']:
+                        pooled_img.append(global_img_pool.to(device))
+                        pooled_vid.append(global_vid_pool.to(device))
+                else:
+                    # Normal spatial ROI pooling
+                    for box in sample['bboxes']:
+                        pooled_img.append(roi_pool_tokens_mean(sample['hw'], fused_img_cpu, box, sample['image_size']).to(device))
+                        pooled_vid.append(roi_pool_tokens_mean(sample['hw'], fused_vid_cpu, box, sample['image_size']).to(device))
 
                 if not pooled_img:
                     empty_candidates += 1
@@ -1160,6 +1395,14 @@ def evaluate(cfg: EvalConfig, rgtp_cfg: RGTPConfig, instr_cfg: Optional[Instrume
         'samples_without_candidates': empty_candidates,
         'checkpoint': str(checkpoint),
         'val_manifest': str(val_manifest),
+        # Efficiency config info
+        'efficiency_frame_subsample_enabled': eff.frame_subsample.enabled,
+        'efficiency_frame_subsample_keep_frames': eff.frame_subsample.keep_frames if eff.frame_subsample.enabled else None,
+        'efficiency_frame_subsample_strategy': eff.frame_subsample.strategy if eff.frame_subsample.enabled else None,
+        'efficiency_token_prune_enabled': eff.token_prune.enabled,
+        'efficiency_token_prune_rate': eff.token_prune.rate if eff.token_prune.enabled else None,
+        'efficiency_token_prune_min_keep': eff.token_prune.min_keep if eff.token_prune.enabled else None,
+        'efficiency_token_prune_strategy': eff.token_prune.strategy if eff.token_prune.enabled else None,
     })
     if lat_ms:
         total_time_s = sum(lat_ms) / 1000.0 if sum(lat_ms) > 0 else 0.0
@@ -1243,7 +1486,7 @@ def evaluate(cfg: EvalConfig, rgtp_cfg: RGTPConfig, instr_cfg: Optional[Instrume
     return metrics
 
 
-def _save_metrics(metrics: Dict[str, Any], eval_cfg: EvalConfig, rgtp_cfg: RGTPConfig, instr_cfg: Optional[InstrumentationConfig]) -> Path:
+def _save_metrics(metrics: Dict[str, Any], eval_cfg: EvalConfig, rgtp_cfg: RGTPConfig, instr_cfg: Optional[InstrumentationConfig], eff_cfg: Optional[EfficiencyConfig] = None) -> Path:
     runs_dir = _cfg_get_any(['output.runs_dir'], str(Path('local_extraction') / 'runs' / 'Track_C'))
     metrics_subdir = _cfg_get_any(['output.metrics_subdir'], 'metrics')
     out_dir = Path(str(runs_dir)) / str(metrics_subdir)
@@ -1253,11 +1496,21 @@ def _save_metrics(metrics: Dict[str, Any], eval_cfg: EvalConfig, rgtp_cfg: RGTPC
     out_path = out_dir / f"trackC_val_rate{int(rate * 100):02d}_{ts}.json"
     with out_path.open('w', encoding='utf-8') as f:
         json.dump(metrics, f, indent=2)
+    
+    # Serialize efficiency config
+    eff_config_dict = None
+    if eff_cfg:
+        eff_config_dict = {
+            'frame_subsample': _serialize_cfg(eff_cfg.frame_subsample),
+            'token_prune': _serialize_cfg(eff_cfg.token_prune),
+        }
+    
     summary = {
         "metrics": metrics,
         "eval_config": _serialize_cfg(eval_cfg),
         "rgtp_config": _serialize_cfg(rgtp_cfg),
         "instrumentation": _serialize_cfg(instr_cfg),
+        "efficiency_config": eff_config_dict,
         "config_name": _config_name,
         "yaml_config_flat": _cfg.flat(),
     }
@@ -1281,6 +1534,10 @@ def main() -> None:
     if _cli_args.no_pruning:
         runtime_cfg.pruning_enabled = False
         runtime_cfg.rgtp_rate = 0.0
+    if _cli_args.rgtp is not None:
+        runtime_cfg.pruning_enabled = (_cli_args.rgtp == 'on')
+        if _cli_args.rgtp == 'off':
+            runtime_cfg.rgtp_rate = 0.0
     
     print("[trackC] Runtime toggles:", {
         'config_name': _config_name,
@@ -1340,6 +1597,19 @@ def main() -> None:
         bench_iters=max(0, int(runtime_cfg.bench_iters)),
         bench_samples=max(0, int(runtime_cfg.bench_samples)),
     )
+    
+    # Create efficiency config (real speedup features)
+    eff_cfg = EfficiencyConfig()
+    
+    # Apply CLI overrides for efficiency options
+    if _cli_args.frame_subsample is not None:
+        eff_cfg.frame_subsample.enabled = (_cli_args.frame_subsample == 'on')
+    if _cli_args.keep_frames is not None:
+        eff_cfg.frame_subsample.keep_frames = _cli_args.keep_frames
+    if _cli_args.token_prune is not None:
+        eff_cfg.token_prune.enabled = (_cli_args.token_prune == 'on')
+    if _cli_args.token_prune_rate is not None:
+        eff_cfg.token_prune.rate = _cli_args.token_prune_rate
 
     torch.set_grad_enabled(False)
 
@@ -1353,8 +1623,8 @@ def main() -> None:
             min_keep=max(1, int(runtime_cfg.min_keep)),
         )
         print(f"\n[trackC] Running rate={rgtp_cfg.rate:.2f} (enabled={rgtp_cfg.enabled})")
-        metrics = evaluate(eval_cfg, rgtp_cfg, instr_cfg)
-        out_path = _save_metrics(metrics, eval_cfg, rgtp_cfg, instr_cfg)
+        metrics = evaluate(eval_cfg, rgtp_cfg, instr_cfg, eff_cfg)
+        out_path = _save_metrics(metrics, eval_cfg, rgtp_cfg, instr_cfg, eff_cfg)
         out_paths.append(out_path)
         last_metrics = metrics
 
