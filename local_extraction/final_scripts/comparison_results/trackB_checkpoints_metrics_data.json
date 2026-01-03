@@ -1,0 +1,105 @@
+{
+  "plot_type": "trackB_checkpoints_metrics",
+  "checkpoints": [
+    {
+      "name": "0.3904",
+      "mAP": 39.04,
+      "accuracy": 0.0,
+      "All_top5_mAP": 0.0,
+      "N_top5_mAP": 0.0,
+      "Nv_top5_mAP": 0.0,
+      "N_delta_top5_mAP": 0.0,
+      "score": 0.0
+    },
+    {
+      "name": "0.3820",
+      "mAP": 38.2,
+      "accuracy": 0.0,
+      "All_top5_mAP": 0.0,
+      "N_top5_mAP": 0.0,
+      "Nv_top5_mAP": 0.0,
+      "N_delta_top5_mAP": 0.0,
+      "score": 0.0
+    },
+    {
+      "name": "0.3746",
+      "mAP": 37.46,
+      "accuracy": 0.0,
+      "All_top5_mAP": 0.0,
+      "N_top5_mAP": 0.0,
+      "Nv_top5_mAP": 0.0,
+      "N_delta_top5_mAP": 0.0,
+      "score": 0.0
+    },
+    {
+      "name": "0.3708",
+      "mAP": 37.08,
+      "accuracy": 0.0,
+      "All_top5_mAP": 0.0,
+      "N_top5_mAP": 0.0,
+      "Nv_top5_mAP": 0.0,
+      "N_delta_top5_mAP": 0.0,
+      "score": 0.0
+    },
+    {
+      "name": "0.3643",
+      "mAP": 36.43,
+      "accuracy": 0.0,
+      "All_top5_mAP": 0.0,
+      "N_top5_mAP": 0.0,
+      "Nv_top5_mAP": 0.0,
+      "N_delta_top5_mAP": 0.0,
+      "score": 0.0
+    },
+    {
+      "name": "0.3627",
+      "mAP": 36.27,
+      "accuracy": 0.0,
+      "All_top5_mAP": 0.0,
+      "N_top5_mAP": 0.0,
+      "Nv_top5_mAP": 0.0,
+      "N_delta_top5_mAP": 0.0,
+      "score": 0.0
+    },
+    {
+      "name": "0.3618",
+      "mAP": 36.18,
+      "accuracy": 0.0,
+      "All_top5_mAP": 0.0,
+      "N_top5_mAP": 0.0,
+      "Nv_top5_mAP": 0.0,
+      "N_delta_top5_mAP": 0.0,
+      "score": 0.0
+    },
+    {
+      "name": "0.3604",
+      "mAP": 36.04,
+      "accuracy": 0.0,
+      "All_top5_mAP": 0.0,
+      "N_top5_mAP": 0.0,
+      "Nv_top5_mAP": 0.0,
+      "N_delta_top5_mAP": 0.0,
+      "score": 0.0
+    },
+    {
+      "name": "0.3598",
+      "mAP": 35.980000000000004,
+      "accuracy": 0.0,
+      "All_top5_mAP": 0.0,
+      "N_top5_mAP": 0.0,
+      "Nv_top5_mAP": 0.0,
+      "N_delta_top5_mAP": 0.0,
+      "score": 0.0
+    },
+    {
+      "name": "0.3586",
+      "mAP": 35.86,
+      "accuracy": 0.0,
+      "All_top5_mAP": 0.0,
+      "N_top5_mAP": 0.0,
+      "Nv_top5_mAP": 0.0,
+      "N_delta_top5_mAP": 0.0,
+      "score": 0.0
+    }
+  ]
+}

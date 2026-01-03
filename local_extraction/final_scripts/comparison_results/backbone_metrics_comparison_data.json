@@ -1,0 +1,39 @@
+{
+  "plot_type": "backbone_metrics_comparison",
+  "resnet18": {
+    "metrics": {
+      "mAP": 38.380008935928345,
+      "accuracy": 67.5514280796051,
+      "All_top5_mAP": 10.533560812473297,
+      "N_top5_mAP": 16.970331966876984,
+      "Nv_top5_mAP": 9.856241196393967,
+      "N_delta_top5_mAP": 14.591526985168457
+    },
+    "label": [
+      "mAP",
+      "Accuracy",
+      "All_top5",
+      "N_top5",
+      "Nv_top5",
+      "N_delta"
+    ]
+  },
+  "videomae": {
+    "metrics": {
+      "mAP": 31.189635396003723,
+      "accuracy": 68.81220936775208,
+      "All_top5_mAP": 9.820453077554703,
+      "N_top5_mAP": 7.445281744003296,
+      "Nv_top5_mAP": 8.740479499101639,
+      "N_delta_top5_mAP": 7.136573642492294
+    },
+    "label": [
+      "mAP",
+      "Accuracy",
+      "All_top5",
+      "N_top5",
+      "Nv_top5",
+      "N_delta"
+    ]
+  }
+}

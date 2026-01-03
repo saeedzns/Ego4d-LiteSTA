@@ -48,6 +48,14 @@ except ImportError:
     print("[error_analysis] Warning: PIL not installed. Custom overlays will be skipped.")
 
 
+def save_plot_data(data: Dict[str, Any], filename: str, output_dir: Path) -> None:
+    """Save plot data to JSON file."""
+    json_path = output_dir / f"{filename}_data.json"
+    with open(json_path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=2, default=str)
+    print(f"[error_analysis] Saved data: {json_path.name}")
+
+
 # ===================== Configuration =====================
 
 @dataclass
@@ -1133,6 +1141,15 @@ def plot_per_class_accuracy(
     plt.savefig(output_path, dpi=150, bbox_inches="tight")
     plt.close()
     print(f"[error_analysis] Saved: {output_path}")
+    
+    # Save plot data
+    save_plot_data({
+        "plot_type": "per_class_accuracy",
+        "show_worst": show_worst,
+        "classes": [{"name": n, "accuracy": float(a), "total": int(t)} 
+                    for n, a, t in zip(names, accuracies, totals)],
+        "overall_accuracy": float(analysis["overall_accuracy"])
+    }, output_path.stem, output_path.parent)
 
 
 def plot_box_size_analysis(
@@ -1168,6 +1185,13 @@ def plot_box_size_analysis(
     plt.savefig(output_path, dpi=150, bbox_inches="tight")
     plt.close()
     print(f"[error_analysis] Saved: {output_path}")
+    
+    # Save plot data
+    save_plot_data({
+        "plot_type": "box_size_accuracy",
+        "categories": [{"label": l, "accuracy": float(a), "total": int(t)} 
+                      for l, a, t in zip(labels, accuracies, totals)]
+    }, output_path.stem, output_path.parent)
 
 
 def plot_ttc_error_distribution(
@@ -1211,6 +1235,15 @@ def plot_ttc_error_distribution(
     plt.savefig(output_path, dpi=150, bbox_inches="tight")
     plt.close()
     print(f"[error_analysis] Saved: {output_path}")
+    
+    # Save plot data
+    save_plot_data({
+        "plot_type": "ttc_error_distribution",
+        "errors": [float(e) for e in errors],
+        "mean_error": float(analysis["mean_error"]),
+        "median_error": float(analysis["median_error"]),
+        "error_bins": {k: int(v) for k, v in bins.items()}
+    }, output_path.stem, output_path.parent)
 
 
 def plot_confusion_summary(
@@ -1244,6 +1277,14 @@ def plot_confusion_summary(
     plt.savefig(output_path, dpi=150, bbox_inches="tight")
     plt.close()
     print(f"[error_analysis] Saved: {output_path}")
+    
+    # Save plot data
+    save_plot_data({
+        "plot_type": "confusion_matrix",
+        "top_confusions": [{"gt_name": c["gt_name"], "pred_name": c["pred_name"], "count": int(c["count"])} 
+                          for c in top_confusions]
+    }, output_path.stem, output_path.parent)
+
 
 
 # ===================== Main =====================

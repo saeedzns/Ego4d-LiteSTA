@@ -1,0 +1,11 @@
+{
+  "plot_type": "backbone_pretraining",
+  "backbone_counts": {
+    "resnet18": 67,
+    "videomae_ego": 31
+  },
+  "pretraining_counts": {
+    "exo": 67,
+    "ego": 31
+  }
+}
