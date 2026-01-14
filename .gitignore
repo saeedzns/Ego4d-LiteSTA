@@ -16,6 +16,8 @@ local_extraction/videomae_local_part/tensors/
 local_extraction/videomae_local_part/tensors_test/
 # === Large binary files ===
 *.pt
+*.rar
+*.zip
 !yolov8s.pt
 
 # === Ignored files ===

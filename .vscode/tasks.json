@@ -1,0 +1,56 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build thesis.docx (pandoc)",
+      "type": "shell",
+      "command": "pandoc",
+      "args": [
+        "thesis_fixed.md",
+        "-o",
+        "build/thesis.docx",
+        "--reference-doc=custom-reference.docx",
+        "--resource-path=.:figs",
+        "--standalone"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}/Final_docx"
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared",
+        "showReuseMessage": false,
+        "clear": true
+      }
+    },
+    {
+      "label": "Fix image paths and build",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-Command",
+        "(Get-Content thesis.md) -replace '^\\s{3}!\\[', '![' -replace '\\.\\./local_extraction/final_scripts/comparison_results/', 'figs/' -replace '\\.\\./local_extraction/runs/Track_B/error_analysis/', 'figs/' -replace 'figs/failure_gallery/', 'figs/' -replace 'figs/success_gallery/', 'figs/' | Set-Content thesis_fixed.md; pandoc thesis_fixed.md -o build/thesis.docx --reference-doc=custom-reference.docx --resource-path=.:figs --standalone --toc --toc-depth=3 --number-sections"
+(Get-Content thesis.md) -replace '^\s{3}!\[', '![' -replace '\.\./local_extraction/final_scripts/comparison_results/', 'figs/' -replace '\.\./local_extraction/runs/Track_B/error_analysis/', 'figs/' -replace 'figs/failure_gallery/', 'figs/' -replace 'figs/success_gallery/', 'figs/' | Set-Content thesis_fixed.md; pandoc thesis_fixed.md -o build/thesis.docx --reference-doc=custom-reference.docx --resource-path=.:figs --standalone --toc --toc-depth=3
+      "options": {
+        "cwd": "${workspaceFolder}/Final_docx"
+      },
+      "group": "build",
+      "problemMatcher": [],
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared",
+        "showReuseMessage": false,
+        "clear": true
+      }
+    }
+  ]
+}
