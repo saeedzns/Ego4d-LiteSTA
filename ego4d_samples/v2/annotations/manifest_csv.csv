@@ -1,3 +1,0 @@
-file_uid,annotation,type,canonical_s3_location
-8a7d977a-293e-4411-a56f-56dff0a907cd,narrations,file,s3://ego4d-consortium-sharing/public/v2/annotations/narration.json
-00b21a03-3383-414e-b7b6-ae271ab7e61a,narration_noun_taxonomy,file,s3://ego4d-consortium-sharing/public/v1/annotations/narration_noun_taxonomy.csv

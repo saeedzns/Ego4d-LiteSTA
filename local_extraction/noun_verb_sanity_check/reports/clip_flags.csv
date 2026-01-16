@@ -1,6 +1,0 @@
-clip_uid,clip_frame,video_uid,noun_id,noun_label,verb_id,verb_label,has_covering_narration,narration_text,structured_verb,freeform_verb,flags
-71e2f5f3-fb8e-4fdd-822f-644a8996fb3e,8736,0e5c7293-c782-4931-ae12-4650792651bd,40,coffee,22,drill,True,#C C holds the metal frame.,"hold_(support,_grip,_grasp)",,verb_mismatch
-ebbe9fdf-babf-46e8-87ac-c4adf19a34e8,4830,c7d5f591-9861-44ac-a30d-3f996f3141f9,1,potato,62,pull,True,#C C picks up a small bubble bag from the lift.,"take_(pick,_grab,_get)",,verb_mismatch
-7d072357-cabe-4ed8-bbec-52475b890301,9177,2967f13e-d2af-4154-b593-d38d61e223d7,47,"paper_(chart,_craft,_newspaper,_note,_paper,_papercraft,_poster,_receipt)",33,hang,True,#c c drops the paint tubes in the box ,"put_(place,_leave,_drop)",,verb_mismatch
-0d56e589-e0c5-48c6-a005-101f1493d9ea,4832,ce2cf2f6-24aa-4195-93a6-f82b283815e6,95,"scraper_(scraper,_scrapper)",17,"detach_(unplug,_unhook,_disconnect)",True,#C  C puts his right hand on the mouth of the hose.,"put_(place,_leave,_drop)",,verb_mismatch
-4f9caa52-51cd-4026-9393-261a3f10a95f,8374,e4dc253e-e5be-4b1e-89c2-ab1a47c486b0,4,hair,62,pull,True,#C C drops the marker and the measuring tape with his right hand.,"put_(place,_leave,_drop)",,verb_mismatch

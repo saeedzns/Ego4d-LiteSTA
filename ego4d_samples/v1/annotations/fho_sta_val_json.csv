@@ -1,3 +1,0 @@
-annotations
-"{'uid': 'cde41c4f-50d1-4910-9f2a-4c7b6987df92_0000468', 'video_id': 'cde41c4f-50d1-4910-9f2a-4c7b6987df92', 'frame': 468, 'clip_id': 8, 'clip_uid': '8d686451-cac9-4526-a022-b6eaf7d467b4', 'clip_frame': 468, 'objects': [{'box': [938.09, 1350.28, 1138.58, 1441.4099999999999], 'verb_category_id': 62, 'noun_category_id': 66, 'time_to_contact': 0.9666666666666667}]}"
-"{'uid': 'cde41c4f-50d1-4910-9f2a-4c7b6987df92_0000483', 'video_id': 'cde41c4f-50d1-4910-9f2a-4c7b6987df92', 'frame': 483, 'clip_id': 8, 'clip_uid': '8d686451-cac9-4526-a022-b6eaf7d467b4', 'clip_frame': 483, 'objects': [{'box': [865.0, 1222.45, 1205.22, 1408.26], 'verb_category_id': 62, 'noun_category_id': 66, 'time_to_contact': 0.4666666666666667}]}"

@@ -1,7 +1,0 @@
-# Test config: fusion.dim=256, fusion.heads=4
-_base_: "trackB_resnet18_baseline.yaml"
-
-model:
-  fusion:
-    dim: 256
-    heads: 4  # 256 / 4 = 64 dims/head

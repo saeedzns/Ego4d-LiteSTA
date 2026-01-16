@@ -1,29 +1,35 @@
-# === General ===
+# === Ignore everything at root ===
+/*
+
+# === Allow specific folders and files ===
+!/.gitignore
+!/README.md
+!/local_extraction/
+
+# === Ignore all files in thesis folder by default ===
+thesis/*
+
+# === Allow only images shown in README ===
+!thesis/success_01.jpg
+!thesis/failure_01.jpg
+!thesis/big_picture_pipeline_diagram.png
+# === Ignore everything inside local_extraction ===
+local_extraction/*
+
+# === Allow ONLY these specific folders ===
+!local_extraction/trackA/
+!local_extraction/trackB/
+!local_extraction/trackC/
+!local_extraction/labels/
+!local_extraction/final_scripts/
+
+# === Common patterns to ignore everywhere ===
 __pycache__/
 *.py[cod]
 .ipynb_checkpoints/
 .venv/
 
-# === Ignored folders ===
-local_extraction/toolkit_yolo/
-local_extraction/runs/
-local_extraction/v2/
-epic-kitchens-download-scripts/
-epic_data/
-local_extraction_old
-local_extraction_old.rar
-local_extraction/videomae_local_part/tensors/
-local_extraction/videomae_local_part/tensors_test/
-# === Large binary files ===
-*.pt
-*.rar
-*.zip
-!yolov8s.pt
-
-# === Ignored files ===
-
-
-# === Exceptions: keep hotspot JSON files in v2 ===
-!local_extraction/v2/hotspot_priors_sta_train.json
-!local_extraction/v2/hotspot_priors_train_logodds_min10.json
-!local_extraction/v2/hotspot_priors_train_prob_min5.json
+# === Ignore all PDF and MD files except README.md ===
+*.pdf
+*.md
+!README.md

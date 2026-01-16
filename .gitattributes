@@ -1,7 +1,0 @@
-# Normalize line endings across platforms
-*.sh text eol=lf
-*.py text eol=lf
-*.ipynb text eol=lf
-
-# Treat Jupyter notebooks as text for diffs
-*.ipynb linguist-generated=false

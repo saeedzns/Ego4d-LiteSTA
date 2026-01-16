@@ -1,8 +1,0 @@
-tqdm>=4.66
-pillow>=10
-imageio>=2.33
-numpy>=1.26
-# Optional (for GPU/CPU video reading):
-decord>=0.6.0
-ffmpeg
-ultralytics
