@@ -2,6 +2,10 @@
 
 A modular three-track pipeline for reproducible egocentric anticipation on consumer hardware. Predicts **what object** (bounding box), **which action** (verb/noun), and **when** (time-to-contact) before physical interaction occurs.
 
+
+![big_picture](thesis/big_picture_pipeline_diagram.png)
+
+
 ## 🎯 Key Results
 
 - **Track A**: 67.8% Recall@6 with lightweight YOLO detector (6 hours GPU training)
