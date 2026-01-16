@@ -199,9 +199,9 @@ Run logs are auto-saved to `runs/` with timestamps for full traceability.
 ```bibtex
 @mastersthesis{ego4d_litesta_2026,
   title={Ego4D-LiteSTA: A Lightweight, Modular Pipeline for Reproducible Short-Term Object Interaction Anticipation},
-  author={[Your Name]},
+  author={[Saeed Zohoorian]},
   year={2026},
-  school={[Your University]}
+  school={[Sapienza University]}
 }
 ```
 
