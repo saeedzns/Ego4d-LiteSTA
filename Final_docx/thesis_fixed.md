@@ -1,4 +1,4 @@
-﻿# Ego4D-LiteSTA: A Lightweight, Modular Pipeline for Reproducible Short-Term Object Interaction Anticipation
+# Ego4D-LiteSTA: A Lightweight, Modular Pipeline for Reproducible Short-Term Object Interaction Anticipation
 
 *Document Type: DOCX*
 
@@ -908,7 +908,7 @@ This section provides a compact numerical reference for the STA literature on Eg
 
 ### 2.9.1 Reported baselines (Top-5 mAP, percent)
 
-Table 2.1 summarizes representative published results on Ego4D‑STA v2 validation using Top‑5 mAP (%). Columns follow the benchmark convention: **N** (noun), **N+V** (noun+verb), **N+δ** (noun+TTC tolerance), **All** (joint).
+Table 1 summarizes representative published results on Ego4D‑STA v2 validation using Top‑5 mAP (%). Columns follow the benchmark convention: **N** (noun), **N+V** (noun+verb), **N+δ** (noun+TTC tolerance), **All** (joint).
 
 
 | Method (reported) | N | N+V | N+δ | All |
@@ -919,7 +919,7 @@ Table 2.1 summarizes representative published results on Ego4D‑STA v2 validati
 | STAformer | 24.85 | 13.45 | 7.41 | 4.90 |
 | STAformer + MH + AFF | 29.39 | 15.38 | 9.94 | 5.67 |
 
-**Table 2.1 - Baseline methods performance on Ego4D-STA v2**
+**Table 1 - Baseline methods performance on Ego4D-STA v2**
 
    However, Ego‑Only, VideoMAE, and the Ego4D dataset itself make a strong case that **ego‑only
    pipelines are viable and competitive**, which aligns with the practical constraints of this thesis.
@@ -1607,7 +1607,7 @@ class_weight_alpha = 0.5  # Smoothing factor
 | N_top5_mAP | 15.28% | 16.97% | -1.70% |
 | All_top5_mAP | 4.81% | 10.53% | -5.72% |
 
-**Table 7.1 - Weighted vs unweighted checkpoint comparison**
+**Table 2 - Weighted vs unweighted checkpoint comparison**
 
 **Class Diversity Analysis:**
 
@@ -1635,7 +1635,7 @@ We report top-5 concentration for both nouns and verbs to characterize the degre
 | Noun top-5 concentration | 21.0% | 45.7% | -54% |
 | Verb top-5 concentration | 31.9% | 89.7% | -64% |
 
-**Table 7.2 - Prediction diversity metrics (lower concentration = better)**
+**Table 3 - Prediction diversity metrics (lower concentration = better)**
 
 **Key Observations:**
 
@@ -1651,7 +1651,7 @@ This diversity analysis provides empirical evidence for the theoretical motivati
 
 The **weighted checkpoint (0.3708) is used throughout this thesis** despite lower aggregate benchmark scores, particularly a -5.72% drop in All_top5_mAP (4.81% vs 10.53%). This choice is supported by empirical evidence and methodological priorities:
 
-1. **Quantified diversity improvement (Table 7.2):** Weighted checkpoint uses 123% more unique noun classes (98 vs 44) and 253% more verb classes (60 vs 17). Top-5 prediction concentration is reduced by 54% for nouns and 64% for verbs, demonstrating successful prevention of class collapse.
+1. **Quantified diversity improvement (Table 3):** Weighted checkpoint uses 123% more unique noun classes (98 vs 44) and 253% more verb classes (60 vs 17). Top-5 prediction concentration is reduced by 54% for nouns and 64% for verbs, demonstrating successful prevention of class collapse.
 
 2. **Prevention of frequency bias:** Without class weighting, the model collapses to predicting only 44 noun classes and concentrates 90% of verb predictions in just 5 frequent classes. Class weighting (α=0.5) forces the model to explore the full label space, improving rare-class representation at the cost of aggregate metrics.
 
@@ -1661,7 +1661,7 @@ The **weighted checkpoint (0.3708) is used throughout this thesis** despite lowe
 
 5. **Research objectives alignment:** our work prioritizes reproducible methodology, rare-class generalization, and transparent engineering trade-offs over benchmark maximization. The documented performance gap is acceptable given the 100-250% diversity improvement.
 
-The performance trade-off (-1.04% mAP, -5.72% All_top5_mAP) is **not slight** but is a measured cost of preventing class collapse. This choice reflects principled engineering: accepting lower aggregate scores to maintain semantic diversity and avoid overfitting to frequent classes. The diversity analysis (Table 7.2, Figure 2) validates this decision empirically rather than relying on theoretical assumptions.
+The performance trade-off (-1.04% mAP, -5.72% All_top5_mAP) is **not slight** but is a measured cost of preventing class collapse. This choice reflects principled engineering: accepting lower aggregate scores to maintain semantic diversity and avoid overfitting to frequent classes. The diversity analysis (Table 3, Figure 2) validates this decision empirically rather than relying on theoretical assumptions.
 
 ### 7.2.7 Experimental run categorization
 
@@ -1684,7 +1684,7 @@ Across Tracks B and C, **98 total evaluation runs** were conducted. Systematic c
 | development | 31 | ❌ | Development runs |
 | other | 31 | ❌ | Misc. experiments |
 
-**Table 7.3 - Run categories and selection criteria**
+**Table 4 - Run categories and selection criteria**
 
 **Track-Specific Selection:**
 - **Track B:** 3 runs using weighted checkpoint `0.3708` (best: `metrics_val_20251226_231700`)
@@ -1716,7 +1716,7 @@ We evaluates both **exo-transfer** (third-person pretrained) and **ego-only** (f
 | Spatial | ResNet18 | ImageNet | Exo | 67 |
 | Temporal | VideoMAE | Ego4D | Ego | 31 |
 
-**Table 7.4 - Backbone and pretraining configurations**
+**Table 5 - Backbone and pretraining configurations**
 
 **Performance Comparison:**
 
@@ -1732,7 +1732,7 @@ We evaluates both **exo-transfer** (third-person pretrained) and **ego-only** (f
 | Accuracy | 67.55% | 68.81% | **VideoMAE** | +1.26% |
 | N_top5_mAP | 16.97% | 7.45% | ResNet18 | -9.53% |
 
-**Table 7.5 - ResNet18 vs VideoMAE performance comparison**
+**Table 6 - ResNet18 vs VideoMAE performance comparison**
 
 **Key Finding:** ResNet18 (exo-transfer) outperforms VideoMAE (ego-pretrained) by 7.19% mAP overall and 9.53% on noun prediction, despite VideoMAE having ego-specific pretraining. This validates the task-bottleneck matching principle: STA's dominant bottleneck is spatial discrimination (nouns), where ResNet18's ImageNet features prove more effective than VideoMAE's temporal motion features. The final thesis checkpoint uses **ResNet18-only architecture**.
 
@@ -1836,7 +1836,7 @@ We follows a **local-first workflow** where ALL Track A/B/C training and evaluat
 - **Epochs**: 30 (completed)
 - **Performance**: 31.19% mAP, 7.45% N_top5_mAP
 - **Environment**: Local CPU (Windows 11, PyTorch 2.9.0+cpu)
-- **Used for**: ResNet18 vs VideoMAE backbone comparison (Table 7.5)
+- **Used for**: ResNet18 vs VideoMAE backbone comparison (Table 6)
 
 *VideoMAE with Class Weights (experimental):*
 - **Run**: trackB_20260102_015613
@@ -1927,7 +1927,7 @@ Unless otherwise stated, the reported Recall@K values follow the proposal “hit
 
 ### 8.1.1 Reported metrics
 
-Table 8.1 summarizes a $K$ sweep for proposal recall and the fraction of candidates labeled positive after Stage‑B alignment.
+Table 7 summarizes a $K$ sweep for proposal recall and the fraction of candidates labeled positive after Stage‑B alignment.
 
 
 | K | Recall@K (micro) | Recall@K (macro) | Positive ratio (micro) | Positive ratio (macro) |
@@ -1939,13 +1939,13 @@ Table 8.1 summarizes a $K$ sweep for proposal recall and the fraction of candida
 | 12 | 0.672 | 0.674 | 0.312 | 0.368 |
 | 15 | 0.672 | 0.674 | 0.312 | 0.368 |
 
-**Table 8.1 - Track A recall at different K values**
+**Table 7 - Track A recall at different K values**
 
 In addition to the $K$ sweep, a full Track‑A run with $K=6$ reported a per‑frame hit‑rate style Recall@K of 0.678 and a mean best‑IoU of 0.617 on the materialized evaluation set.
 
 ### 8.1.2 Key observations
 
-Three observations follow from Table 8.1 and the per‑run summary statistics:
+Three observations follow from Table 7 and the per‑run summary statistics:
 
 1) **Recall saturates quickly with $K$.** Recall improves from $K=4$ to $K=6$ and then largely plateaus for larger $K$. This supports using small candidate sets without losing proposal coverage.
 
@@ -1963,7 +1963,7 @@ Unless otherwise stated, Track B uses a lightweight fusion head with multi‑tas
 
 ### 8.2.1 Top-5 mAP variants
 
-Table 8.2 reports the top‑5 mAP metrics (in %) for the best Track‑B checkpoint evaluated on the validation manifests.
+Table 8 reports the top‑5 mAP metrics (in %) for the best Track‑B checkpoint evaluated on the validation manifests.
 
 
 | Metric (top‑5) | Value (%) |
@@ -1973,7 +1973,7 @@ Table 8.2 reports the top‑5 mAP metrics (in %) for the best Track‑B checkpoi
 | N+δ mAP (top‑5) | 12.83 |
 | Overall mAP (top‑5) | 4.81 |
 
-**Table 8.2 - Track B baseline performance metrics (weighted checkpoint)**
+**Table 8 - Track B baseline performance metrics (weighted checkpoint)**
 
 These values correspond to the best Track‑B checkpoint by validation mAP: `trackB_best_mAP_0.3708_20251225_224220.pt` (ResNet18 backbone, weighted training with α=0.5, tokens at `v2/resnet18_tokens`, configuration: `trackB_20251226_231700`).
 
@@ -1998,8 +1998,6 @@ Three qualitative interpretations follow:
 
 Track C evaluates rollout‑guided token pruning as a training‑free efficiency knob applied at inference time. The key methodological constraint is that pruning is applied without retraining the Track‑B weights; therefore, any accuracy changes can be attributed to reduced token computation rather than representation learning.
 
-### 8.3.0 Track B (Baseline) vs Track C (Efficiency) Comparison
-
 This section compares the baseline Track B performance with Track C efficiency optimizations. The Track B baseline establishes the accuracy ceiling, while Track C explores the Pareto frontier of latency vs accuracy trade-offs using three pruning strategies:
 
 1. **Frame Pruning (Fr)**: Uniformly prune frames from input sequence
@@ -2011,7 +2009,7 @@ This section compares the baseline Track B performance with Track C efficiency o
 **Figure 7 - Track B vs Track C Comparison**
 
 
-Table 8.2.1 compares baseline Track B with representative Track C efficiency configurations evaluated in December 2025. All experiments use the same weighted checkpoint (0.3708, 37.34% aggregate mAP) for fair comparison.
+Table 9 compares baseline Track B with representative Track C efficiency configurations evaluated in December 2025. All experiments use the same weighted checkpoint (0.3708, 37.34% aggregate mAP) for fair comparison.
 
 
 | Config | mAP | Accuracy | N-top5 | Latency | TTC MAE |
@@ -2021,7 +2019,7 @@ Table 8.2.1 compares baseline Track B with representative Track C efficiency con
 | Fr=4+Tok=0.3 | 35.95% | 64.75% | 3.42% | 19.8ms | 0.199s |
 | RGTP=0.1 | 37.30% | 64.43% | 3.45% | 23.6ms | 0.199s |
 
-**Table 8.3 - Track B vs Track C efficiency comparison**
+**Table 9 - Track B vs Track C efficiency comparison**
 
 **Key Findings:**
 
@@ -2047,23 +2045,23 @@ These results validate the Track C design: **multiple efficiency knobs enable de
 **Figure 8 - Efficiency Configurations**
 
 
-###8.3.1 Accuracy retained under pruning
+### 8.3.1 Accuracy retained under pruning
 
 **Important Metric Distinction:**
 
-This subsection reports an **early exploratory experiment** using different evaluation settings than the main Track C results (Table 8.3). The metrics are not directly comparable:
+This subsection reports an **early exploratory experiment** using different evaluation settings than the main Track C results (Table 9). The metrics are not directly comparable:
 
-- **Table 8.3** reports **aggregate candidate-level mAP** (37.34% baseline) - measures detection quality across all candidates
-- **Table 8.4 below** reports **Overall top-5 mAP** (2.44% baseline) - strictest metric requiring noun+verb+TTC all correct in top-5
+- **Table 9** reports **aggregate candidate-level mAP** (37.34% baseline) - measures detection quality across all candidates
+- **Table 10 below** reports **Overall top-5 mAP** (2.44% baseline) - strictest metric requiring noun+verb+TTC all correct in top-5
 
 **Why the apparent discrepancy?**
 1. Overall top-5 mAP is the most restrictive metric (joint correctness requirement)
 2. Different evaluation runs with slightly different configurations
-3. Table 8.4 represents early RGTP exploration, Table 8.3 represents finalized efficiency comparison
+3. Table 10 represents early RGTP exploration, Table 9 represents finalized efficiency comparison
 
-**Recommendation:** Focus on **Table 8.3** for Track C analysis as it shows the full accuracy-latency trade-off using consistent evaluation. Table 8.4 is retained for completeness but represents preliminary findings with stricter metrics.
+**Recommendation:** Focus on **Table 9** for Track C analysis as it shows the full accuracy-latency trade-off using consistent evaluation. Table 10 is retained for completeness but represents preliminary findings with stricter metrics.
 
-Table 8.4 summarizes correctness metrics for a fixed Track‑B checkpoint evaluated under different pruning settings. The pruning “rate” denotes the requested pruning level; the achieved fraction pruned can be lower due to the rollout‑guided selection and safety constraints. Top‑5 mAP values are reported in %.
+Table 10 summarizes correctness metrics for a fixed Track‑B checkpoint evaluated under different pruning settings. The pruning “rate” denotes the requested pruning level; the achieved fraction pruned can be lower due to the rollout‑guided selection and safety constraints. Top‑5 mAP values are reported in %.
 
 
 | Setting | Achieved fraction pruned | Overall mAP (top‑5) (%) | TTC MAE (s) |
@@ -2072,13 +2070,13 @@ Table 8.4 summarizes correctness metrics for a fixed Track‑B checkpoint evalua
 | RGTP (rate 0.30) | 0.102 | 1.33 | 0.193 |
 | RGTP (rate 0.50) | 0.120 | 1.26 | 0.193 |
 
-**Table 8.4 - Token pruning configurations and results**
+**Table 10 - Token pruning configurations and results**
 
 In this reference run, pruning reduced top‑5 overall mAP while keeping TTC MAE within a narrow band. This illustrates the central trade‑off in Track C: pruning can reduce compute, but aggressive pruning (or pruning that removes informative tokens) can harm the fine‑grained ranking and matching required by top‑5 metrics.
 
 ### 8.3.2 Runtime and Pareto analysis
 
-Track C also reports runtime measurements collected under a consistent measurement setup. Table 8.4 summarizes mean latency and throughput for the same pruning settings as Table 8.3.
+Track C also reports runtime measurements collected under a consistent measurement setup. Table 11 summarizes mean latency and throughput for the same pruning settings as Table 9.
 
 
 | Setting | Latency mean (ms) | Latency p95 (ms) | Throughput (samples/s) |
@@ -2087,7 +2085,7 @@ Track C also reports runtime measurements collected under a consistent measureme
 | RGTP (rate 0.30) | 12.16 | 14.61 | 82.21 |
 | RGTP (rate 0.50) | 11.88 | 13.78 | 84.19 |
 
-**Table 8.5 - RGTP efficiency metrics: latency reduction and throughput gains**
+**Table 11 - RGTP efficiency metrics: latency reduction and throughput gains**
 
 Two conclusions follow:
 
@@ -2101,7 +2099,7 @@ This section compares Ego4D‑LiteSTA against representative published baselines
 
 ### 8.4.1 Reported literature baselines
 
-Table 8.5 restates the literature reference points from Chapter 2 for convenience.
+Table 12 restates the literature reference points from Chapter 2 for convenience.
 
 
 | Method (reported) | N | N+V | N+δ | All |
@@ -2112,20 +2110,20 @@ Table 8.5 restates the literature reference points from Chapter 2 for convenienc
 | STAformer | 24.85 | 13.45 | 7.41 | 4.90 |
 | STAformer + MH + AFF | 29.39 | 15.38 | 9.94 | 5.67 |
 
-**Table 8.6 - Literature baseline methods (Top-5 mAP, %)**
+**Table 12 - Literature baseline methods (Top-5 mAP, %)**
 
 ### 8.4.2 Ego4D-LiteSTA vs reported baselines
 
-Table 8.7 inserts the best Ego4D‑LiteSTA Track‑B result from our work into the same metric format (Top‑5 mAP, %). For fair comparison with literature baselines (which did not report class weighting strategies), we present the **unweighted checkpoint** results here, while all other experiments in our work use the **weighted checkpoint** (0.3708, see Section 7.2.5).
+Table 13 inserts the best Ego4D‑LiteSTA Track‑B result from our work into the same metric format (Top‑5 mAP, %). For fair comparison with literature baselines (which did not report class weighting strategies), we present the **unweighted checkpoint** results here, while all other experiments in our work use the **weighted checkpoint** (0.3708, see Section 7.2.5).
 
 
 | Method | N | N+V | N+δ | All |
 |---|---:|---:|---:|---:|
 | Ego4D‑LiteSTA (Track B, unweighted)* | 16.97 | 9.86 | 14.59 | 10.53 |
 
-**Table 8.7 - Ego4D-LiteSTA performance comparison (Top-5 mAP, %)**
+**Table 13 - Ego4D-LiteSTA performance comparison (Top-5 mAP, %)**
 
-*Note: Unweighted checkpoint (0.3904, 38.38% aggregate mAP) used for fair comparison with literature. The weighted checkpoint (0.3708, 37.34% aggregate mAP) used in all other experiments achieves N=15.28%, N+V=4.81%, N+δ=12.83%, All=4.81% (Table 8.2).
+*Note: Unweighted checkpoint (0.3904, 38.38% aggregate mAP) used for fair comparison with literature. The weighted checkpoint (0.3708, 37.34% aggregate mAP) used in all other experiments achieves N=15.28%, N+V=4.81%, N+δ=12.83%, All=4.81% (Table 8).
 
 **Performance Breakdown for Ego4D‑LiteSTA:**
 - Aggregate candidate-level mAP: 38.38% (unweighted checkpoint shown here for literature comparison)
@@ -2146,7 +2144,7 @@ These results highlight the central positioning of Ego4D‑LiteSTA: Our approach
 
 This ablation studies the effect of proposal count $K$ on downstream behavior. In Ego4D‑LiteSTA, $K$ controls both proposal coverage (Track A Recall@K) and the head’s class imbalance (positive ratio vs negatives). We sweep $K$ and report Recall@K and positive ratios (Chapter 8).
 
-For context, Table 9.1 reproduces a candidate‑count ablation reported in SOIA‑DOD on Ego4D validation, which studies how changing the number of object candidates affects the same Top‑5 metric family.
+For context, Table 14 reproduces a candidate‑count ablation reported in SOIA‑DOD on Ego4D validation, which studies how changing the number of object candidates affects the same Top‑5 metric family.
 
 
 | # Candidates | N | N+V | N+TTC | Overall |
@@ -2155,7 +2153,7 @@ For context, Table 9.1 reproduces a candidate‑count ablation reported in SOIA�
 | 10 | 30.65 | 15.22 | 9.222 | 4.98 |
 | 20 | 30.94 | 14.88 | 8.86 | 4.87 |
 
-**Table 9.1 - Candidate limit (K) ablation: SOIA-DOD performance vs number of candidates**
+**Table 14 - Candidate limit (K) ablation: SOIA-DOD performance vs number of candidates**
 
 ### 9.1.2 Findings
 
@@ -2176,7 +2174,7 @@ This ablation analyzes the capacity of the Track‑B fusion module, focusing on 
 
 Because Track‑B is designed to be lightweight and to run on modest compute, our work does not present a full grid search over depth and dimensionality. Instead, it reports a constrained comparison between two representative checkpoints that differ in projected token dimensionality (768 vs 512) while keeping the candidate limit fixed at 16.
 
-Table 9.2 reports Top‑5 mAP metrics in percent and TTC MAE in seconds.
+Table 15 reports Top‑5 mAP metrics in percent and TTC MAE in seconds.
 
 ### 9.2.2 Findings
 
@@ -2192,7 +2190,7 @@ The constrained comparison suggests a clear capacity–performance trade‑off:
 | Track‑B (768-dim variant) | 768 | 7.45 | 8.74 | 7.14 | 9.82 | 0.200 |
 | Compact token projection | 512 | 13.62 | 3.40 | 12.17 | 3.04 | 0.200 |
 
-**Table 9.2 - Token dimensionality ablation: fusion capacity vs performance trade-off**
+**Table 15 - Token dimensionality ablation: fusion capacity vs performance trade-off**
 
 Note: These are experimental variants used for ablation analysis. The final best checkpoint metrics reported in Chapter 8 (N: 16.97%, All: 10.53%) represent the optimal configuration selected after comprehensive hyperparameter search.
 
@@ -2207,7 +2205,7 @@ Ego4D‑STA requires predicting time‑to‑contact (TTC) in addition to noun an
 
 In the set of Track‑B runs evaluated and logged in this thesis, TTC is modeled using **normalized regression** (the training configuration for the best checkpoint explicitly sets TTC bins off). Therefore, the “Regression vs bins” comparison is framed here as an analysis of the chosen regression formulation, rather than as a head‑to‑head sweep.
 
-Table 9.3 summarizes TTC MAE alongside Top‑5 “All” for representative runs.
+Table 16 summarizes TTC MAE alongside Top‑5 “All” for representative runs.
 
 ### 9.3.2 Findings
 
@@ -2226,7 +2224,7 @@ Three observations follow:
 | Prior‑sweep baseline (same checkpoint family) | (not logged) | 3.05 | 0.190 |
 | Legacy checkpoint (older) | (not logged) | 8.66 | 0.413 |
 
-**Table 9.3 - TTC modeling analysis: regression accuracy across checkpoint variants**
+**Table 16 - TTC modeling analysis: regression accuracy across checkpoint variants**
 
 ## 9.4 Priors (Hotspots, CLIP) and Their Impact
 
@@ -2239,7 +2237,7 @@ This ablation evaluates optional **inference‑time priors** that reweight candi
 
 Crucially, these priors are applied **without retraining**. The evaluation uses the same Track‑B checkpoint and validation manifest, and reports the impact of enabling priors on Top‑5 mAP metrics.
 
-Table 9.4 reports results in percent.
+Table 17 reports results in percent.
 
 ### 9.4.2 Findings
 
@@ -2258,7 +2256,7 @@ For this checkpoint and validation set, priors do not improve the overall Top‑
 | Hotspots | 12.05 | 3.20 | 10.18 | 2.92 | 0.190 |
 | Hotspots + CLIP | 12.86 | 3.26 | 11.03 | 2.99 | 0.190 |
 
-**Table 9.4 - Prior impact analysis: hotspots and CLIP semantic reweighting effects**
+**Table 17 - Prior impact analysis: hotspots and CLIP semantic reweighting effects**
 
 ## 9.5 Error Analysis and Qualitative Galleries
 
@@ -2394,44 +2392,60 @@ These cases provide positive evidence for the approach and can be used directly 
 **Per-Class Performance Breakdown:**
 
 
-| Category | Best Classes (Top 5) | Accuracy | Worst Classes (Top 5) | Accuracy |
-|----------|---------------------|----------|----------------------|----------|
+| Category | Best Class | Accuracy | Worst Class | Accuracy |
+|----------|------------|----------|-------------|----------|
 
-**Table 9.5 - Per-class performance breakdown structure**
+**Table 18 - Per-class performance breakdown structure**
 
-| **Nouns** | mold | 83.3% (5/6) | paper | 0% (0/7) |
+| Category | Best Class | Accuracy | Worst Class | Accuracy |
+|----------|------------|----------|-------------|---------|
+| Noun | mold | 83.3% (5/6) | paper | 0% (0/7) |
 
-**Table 9.6 - Best noun: mold (distinctive shape) vs worst: paper (material texture)**
+**Table 19 - Best noun: mold (distinctive shape) vs worst: paper (material texture)**
 
-| | cup | 75.0% (3/4) | bucket | 0% (0/6) |
+| Category | Best Class | Accuracy | Worst Class | Accuracy |
+|----------|------------|----------|-------------|---------|
+| Noun | cup | 75.0% (3/4) | bucket | 0% (0/6) |
 
-**Table 9.7 - Rigid containers (cup) vs flexible materials (bucket)**
+**Table 20 - Rigid containers (cup) vs flexible materials (bucket)**
 
-| | dough | 66.7% (2/3) | bottle | 0% (0/6) |
+| Category | Best Class | Accuracy | Worst Class | Accuracy |
+|----------|------------|----------|-------------|---------|
+| Noun | dough | 66.7% (2/3) | bottle | 0% (0/6) |
 
-**Table 9.8 - Distinctive textures (dough) vs transparent objects (bottle)**
+**Table 21 - Distinctive textures (dough) vs transparent objects (bottle)**
 
-| | tablet | 66.7% (4/6) | cement | 0% (0/5) |
-| | playing_cards | 57.1% (4/7) | wire | 0% (0/5) |
+| Category | Best Class | Accuracy | Worst Class | Accuracy |
+|----------|------------|----------|-------------|---------|
+| Noun | tablet | 66.7% (4/6) | cement | 0% (0/5) |
+| Noun | playing_cards | 57.1% (4/7) | wire | 0% (0/5) |
 
-**Table 9.9 - Structured objects (tablet, cards) vs amorphous materials (cement, wire)**
+**Table 22 - Structured objects (tablet, cards) vs amorphous materials (cement, wire)**
 
-| **Verbs** | apply | 33.3% (1/3) | cut | 0% (0/12) |
+| Category | Best Class | Accuracy | Worst Class | Accuracy |
+|----------|------------|----------|-------------|---------|
+| Verb | apply | 33.3% (1/3) | cut | 0% (0/12) |
 
-**Table 9.10 - Best verb: apply (contact-based) vs worst: cut (requires motion)**
+**Table 23 - Best verb: apply (contact-based) vs worst: cut (requires motion)**
 
-| | turn | 20.0% (1/5) | touch | 0% (0/12) |
+| Category | Best Class | Accuracy | Worst Class | Accuracy |
+|----------|------------|----------|-------------|---------|
+| Verb | turn | 20.0% (1/5) | touch | 0% (0/12) |
 
-**Table 9.11 - Rotational actions (turn) vs generic contact (touch)**
+**Table 24 - Rotational actions (turn) vs generic contact (touch)**
 
-| | move | 16.7% (3/18) | put | 0% (0/10) |
+| Category | Best Class | Accuracy | Worst Class | Accuracy |
+|----------|------------|----------|-------------|---------|
+| Verb | move | 16.7% (3/18) | put | 0% (0/10) |
 
-**Table 9.12 - Large-scale motion (move) vs placement actions (put)**
+**Table 25 - Large-scale motion (move) vs placement actions (put)**
 
-| | hold | 16.0% (4/25) | press_push | 0% (0/8) |
-| | take | 13.9% (14/101) | operate | 0% (0/8) |
+| Category | Best Class | Accuracy | Worst Class | Accuracy |
+|----------|------------|----------|-------------|---------|
+| Verb | hold | 16.0% (4/25) | press_push | 0% (0/8) |
+| Verb | take | 13.9% (14/101) | operate | 0% (0/8) |
 
-**Table 9.13 - Static actions (hold, take) vs force-based manipulation (press_push, operate)**
+**Table 26 - Static actions (hold, take) vs force-based manipulation (press_push, operate)**
 
 **Pattern Observation:** Best-performing classes have distinctive visual signatures (mold, cup, dough) or rigid shapes. Worst performers are materials (paper, cement, wire), flexible objects (bucket, bottle), and rare/ambiguous actions (cut, touch, operate).
 
@@ -2447,7 +2461,7 @@ These cases provide positive evidence for the approach and can be used directly 
 | plant → wire | 8 | Background-to-object |
 | wood → paper | 7 | Material-to-material |
 
-**Table 9.14 - Top confusion patterns: semantically meaningful within-category errors**
+**Table 27 - Top confusion patterns: semantically meaningful within-category errors**
 
 **Interpretation:** Confusions are semantically meaningful (tools confuse with tools, materials with materials), indicating learned category structure despite low overall accuracy. Model lacks fine-grained discrimination within categories.
 
@@ -2460,7 +2474,7 @@ These cases provide positive evidence for the approach and can be used directly 
 | Medium (1-5% area) | 10.79% | 547 | Similar accuracy |
 | Large (> 5% area) | 18.64% | 558 | Size-independent |
 
-**Table 9.15 - Box size stratification: accuracy uniform across scales (classification bottleneck, not detection)**
+**Table 28 - Box size stratification: accuracy uniform across scales (classification bottleneck, not detection)**
 
 **Critical Finding:** Accuracy is similar across all object sizes (10-19%), proving this is NOT a detection/localization problem but a **classification bottleneck**. All sizes are successfully detected and cropped to 256×256, but frozen ImageNet features cannot discriminate fine-grained ego categories regardless of input scale.
 
@@ -2512,84 +2526,24 @@ These cases provide positive evidence for the approach and can be used directly 
 
 ![Confusion matrix heatmap showing top noun prediction errors](figs/noun_confusions.png)
 
-   **Figure 20 - Noun Confusion Matrix**
+   **Figure 21 - Noun Confusion Matrix**
 
 
-**Architecture Flow Diagram (ResNet18-Only):**
+![Architecture flow diagram showing ResNet18 frozen backbone (11.2M params, ImageNet pretrained) → Projector (130K trainable) → Cross-Attention Fusion (2M, 4 layers, 8 heads) → 4 prediction heads (Next/Noun/Verb/TTC). Trainable: 2.5M / 13.7M total = 18.2%.](figs/architecture_flow_resnet18.png)
 
-```
-Video Clip (16 frames @ 540×960)
-         ↓
-YOLO Track A Detection → Candidate boxes
-         ↓
-Crop & Resize → 256×256 per box per frame
-         ↓
-┌────────────────────────────────────┐
-│ ResNet18 FROZEN (11.2M params) ❄️  │  ← ImageNet pretraining
-│ Per-frame feature extraction       │
-│ Output: 512-dim × 16 frames        │
-└───────────┬────────────────────────┘
-            ↓
-┌────────────────────────────────────┐
-│ Projector TRAINABLE (130K params)  │
-│ Linear: 512-dim → 256-dim          │
-└───────────┬────────────────────────┘
-            ↓
-┌────────────────────────────────────┐
-│ Cross-Attention Fusion (~2M params)│  ← Learns temporal
-│ 4 layers, 8 heads                  │
-│ Attends across 16 frames           │
-└───────────┬────────────────────────┘
-            ↓
-        ┌───────┬────────┬────────┐
-        ↓       ↓        ↓        ↓
-     Next    Noun     Verb     TTC
-     (1)    (114)     (19)  (regress)
-
-Trainable: 2.5M / 13.7M total = 18.2%
-```
+**Figure 22 - ResNet18 Architecture Flow Diagram**
 
 **Key Bottleneck Identified:** Frozen ResNet18 (82% of parameters) cannot adapt to egocentric domain, limiting trainable layers (18%) to re-combining existing ImageNet features rather than extracting ego-specific patterns.
 
-**Architecture Flow Diagram (VideoMAE Configuration - TESTED BUT NOT USED):**
+![Architecture flow diagram showing VideoMAE frozen backbone (~87M params, Ego4D MAE pretrained) → Projector (768→256 dim, trainable) → Cross-Attention Fusion (2M, 4 layers, 8 heads) → 4 prediction heads (Next/Noun/Verb/TTC). Result: 31.19% mAP vs ResNet18: 37.34%.](figs/architecture_flow_videomae.png)
 
-```
-Video Clip (16 frames @ 540×960)
-         ↓
-YOLO Track A Detection → Candidate boxes
-         ↓
-Crop & Resize → 256×256 per box per frame
-         ↓
-┌────────────────────────────────────┐
-│ VideoMAE FROZEN (~87M params) ❄️   │  ← Ego4D MAE pretraining
-│ ViT-S/16 masked reconstruction     │
-│ Temporal specialization (25 epochs)│
-│ Output: 768-dim × 16 frames        │
-└───────────┬────────────────────────┘
-            ↓
-┌────────────────────────────────────┐
-│ Projector TRAINABLE                 │
-│ Linear: 768-dim → 256-dim          │
-└───────────┬────────────────────────┘
-            ↓
-┌────────────────────────────────────┐
-│ Cross-Attention Fusion (~2M params)│  ← Same as ResNet18
-│ 4 layers, 8 heads                  │
-└───────────┬────────────────────────┘
-            ↓
-        ┌───────┬────────┬────────┐
-        ↓       ↓        ↓        ↓
-     Next    Noun     Verb     TTC
-     (1)    (128)    (81)  (regress)
-
-Result: 31.19% mAP vs ResNet18: 37.34%
-```
+**Figure 23 - VideoMAE Architecture Flow Diagram (tested but not used)**
 
 **Why VideoMAE Failed (Despite Ego-Pretraining):**
 
 1. **Architectural Mismatch:** VideoMAE encoder (~87M params) trained for masked video reconstruction optimizes for temporal motion patterns and frame prediction, not spatial object appearance discrimination. The learned representations specialize in "what moves" rather than "what this object is."
 
-2. **Task Bottleneck Mismatch:** STA's dominant bottleneck is **spatial discrimination** (noun prediction: identifying wrench vs screwdriver from appearance). ResNet18's ImageNet pretraining explicitly targets object appearance classification, directly matching this bottleneck. VideoMAE's temporal specialization addresses a secondary bottleneck (verb/action), explaining why it underperforms by 7.19% overall and 9.53% on noun prediction (Table 7.5).
+2. **Task Bottleneck Mismatch:** STA's dominant bottleneck is **spatial discrimination** (noun prediction: identifying wrench vs screwdriver from appearance). ResNet18's ImageNet pretraining explicitly targets object appearance classification, directly matching this bottleneck. VideoMAE's temporal specialization addresses a secondary bottleneck (verb/action), explaining why it underperforms by 7.19% overall and 9.53% on noun prediction (Table 6).
 
 3. **Quantitative Evidence:** VideoMAE achieves slightly better accuracy (68.81% vs 67.55%), suggesting better general feature quality, but this doesn't translate to mAP gains because STA evaluation rewards correct ranking of candidates with correct semantic labels—a task requiring fine-grained appearance discrimination, not general classification.
 
@@ -2668,7 +2622,7 @@ The report also compares ResNet18 to VideoMAE:
 | Accuracy | 67.55% | 68.81% | +1.26% (+2%) |
 | TTC MAE | 0.200s | ~0.200s | ~0% |
 
-**Table 9.16 - ResNet18 vs VideoMAE backbone comparison: ego-pretraining fails when mismatched to task bottleneck**
+**Table 29 - ResNet18 vs VideoMAE backbone comparison: ego-pretraining fails when mismatched to task bottleneck**
 
 **Critical Finding: Task-Bottleneck Matching Principle**
 
@@ -2828,7 +2782,7 @@ The following recommendations are prioritized by expected performance gain relat
 
 **Priority 2: Explicit motion features (+300% verb accuracy expected)**
 
-**Motivation:** Verb accuracy is 10.58%, with 5 zero-accuracy action classes (cut, touch, put, press_push, operate). Verbs require motion/velocity information, but frozen ResNet18 provides only static appearance. Table 9.9 shows temporal aggregation alone (without motion encoding) fails to capture action dynamics.
+**Motivation:** Verb accuracy is 10.58%, with 5 zero-accuracy action classes (cut, touch, put, press_push, operate). Verbs require motion/velocity information, but frozen ResNet18 provides only static appearance. Table 22 shows temporal aggregation alone (without motion encoding) fails to capture action dynamics.
 
 **Approach:** Add optical flow or temporal difference features computed from consecutive frames. Fuse motion features with appearance features via a lightweight fusion module (concatenation or learned weighting).
 
@@ -2841,7 +2795,7 @@ The following recommendations are prioritized by expected performance gain relat
 
 **Priority 3: Hierarchical classification (+50% noun accuracy expected)**
 
-**Motivation:** Per-class analysis (Table 9.15) shows coarse-grained tool detection succeeds (~70% for tool category), but fine-grained discrimination fails (wrench→screwdriver: 10 confusions). Current flat 128-class prediction wastes capacity on implausible categories given context.
+**Motivation:** Per-class analysis (Table 28) shows coarse-grained tool detection succeeds (~70% for tool category), but fine-grained discrimination fails (wrench→screwdriver: 10 confusions). Current flat 128-class prediction wastes capacity on implausible categories given context.
 
 **Approach:** Two-stage classification: (1) Coarse category prediction (tool/material/container/food, ~15 categories) using existing ResNet18 features, (2) Fine-grained class prediction within detected category using additional discriminative features or attention mechanisms.
 
