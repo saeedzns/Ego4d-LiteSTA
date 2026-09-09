@@ -22,6 +22,12 @@ local_extraction/*
 !local_extraction/trackC/
 !local_extraction/labels/
 !local_extraction/final_scripts/
+!local_extraction/inference/
+!local_extraction/inference/**
+
+# === Allow focused inference tests ===
+!/tests/
+!/tests/test_inference_artifacts.py
 
 # === Common patterns to ignore everywhere ===
 __pycache__/
