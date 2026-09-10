@@ -42,6 +42,10 @@ class InferenceConfig:
     temporal_window_length: int = 16
     temporal_stride: int = 2
     candidate_limit: int = 16
+    track_a_imgsz: int = 960
+    track_a_confidence: float = 0.05
+    track_a_iou: float = 0.45
+    track_a_top_k: int = 6
 
     def __post_init__(self) -> None:
         root = Path(self.repo_root).expanduser().resolve()
@@ -61,5 +65,13 @@ class InferenceConfig:
             raise ValueError("temporal_stride must be greater than zero")
         if self.candidate_limit <= 0:
             raise ValueError("candidate_limit must be greater than zero")
+        if self.track_a_imgsz <= 0:
+            raise ValueError("track_a_imgsz must be greater than zero")
+        if not 0.0 <= self.track_a_confidence <= 1.0:
+            raise ValueError("track_a_confidence must be between zero and one")
+        if not 0.0 <= self.track_a_iou <= 1.0:
+            raise ValueError("track_a_iou must be between zero and one")
+        if self.track_a_top_k <= 0:
+            raise ValueError("track_a_top_k must be greater than zero")
         if not self.device:
             raise ValueError("device must not be empty")
