@@ -38,6 +38,10 @@ class InferenceConfig:
     ttc_stats_path: Path = Path(
         "local_extraction/inference/resources/trackB_ttc_stats.json"
     )
+    track_b_feature_contract_path: Path = Path(
+        "local_extraction/inference/resources/trackB_feature_contract.json"
+    )
+    tokenizer_weights_path: Path | None = None
     device: str = "cpu"
     temporal_window_length: int = 16
     temporal_stride: int = 2
@@ -55,8 +59,13 @@ class InferenceConfig:
             "track_b_checkpoint",
             "taxonomy_path",
             "ttc_stats_path",
+            "track_b_feature_contract_path",
+            "tokenizer_weights_path",
         ):
-            value = _resolve_path(getattr(self, name), root).resolve()
+            raw_value = getattr(self, name)
+            if raw_value is None:
+                continue
+            value = _resolve_path(raw_value, root).resolve()
             object.__setattr__(self, name, value)
 
         if self.temporal_window_length <= 0:

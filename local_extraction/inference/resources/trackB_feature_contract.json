@@ -1,0 +1,20 @@
+{
+  "checkpoint": "trackB_best_mAP_0.3708_20251225_224220.pt",
+  "backbone": "resnet18",
+  "backbone_weights": "IMAGENET1K_V1",
+  "backbone_weights_filename": "resnet18-f37072fd.pth",
+  "backbone_weights_sha256": "f37072fd47e89c5e827621c5baffa7500819f7896bbacec160b1a16c560e07ec",
+  "image_size": 224,
+  "normalization_mean": [0.485, 0.456, 0.406],
+  "normalization_std": [0.229, 0.224, 0.225],
+  "grid_hw": [7, 7],
+  "token_count": 49,
+  "token_dim": 512,
+  "temporal_window": 16,
+  "temporal_stride": 2,
+  "token_dtype": "float32",
+  "token_device": "cpu",
+  "source_cache": "local_extraction/v2/resnet18_tokens",
+  "cache_generation_timestamp": "2025-12-08T17:37:28.689386",
+  "provenance_note": "Representative 224-generated tokens were numerically identical to cached training tokens."
+}

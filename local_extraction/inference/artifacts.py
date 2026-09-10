@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import math
+import re
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -48,6 +49,30 @@ class TrackBArtifactMetadata:
     has_head_state: bool
     train_config: Mapping[str, Any]
     architecture_metadata: Mapping[str, Any]
+
+
+@dataclass(frozen=True)
+class TrackBFeatureContract:
+    """Checkpoint-specific contract for raw Track B visual features."""
+
+    checkpoint: str
+    backbone: str
+    backbone_weights: str
+    backbone_weights_filename: str
+    backbone_weights_sha256: str
+    image_size: int
+    normalization_mean: tuple[float, float, float]
+    normalization_std: tuple[float, float, float]
+    grid_hw: tuple[int, int]
+    token_count: int
+    token_dim: int
+    temporal_window: int
+    temporal_stride: int
+    token_dtype: str
+    token_device: str
+    source_cache: str
+    cache_generation_timestamp: str
+    provenance_note: str
 
 
 def _require_file(path: Path, description: str) -> Path:
@@ -108,6 +133,77 @@ def load_ttc_stats(path: Path) -> TTCStats:
         maximum=maximum,
         source_manifest=data["source_manifest"],
         normalization=data["normalization"],
+    )
+
+
+def _contract_float_vector(data: Mapping[str, Any], name: str) -> tuple[float, float, float]:
+    values = data.get(name)
+    if not isinstance(values, list) or len(values) != 3:
+        raise ArtifactError(f"Feature contract field '{name}' must contain three values")
+    try:
+        result = tuple(float(value) for value in values)
+    except (TypeError, ValueError) as exc:
+        raise ArtifactError(f"Feature contract field '{name}' must contain numeric values") from exc
+    if not all(math.isfinite(value) for value in result):
+        raise ArtifactError(f"Feature contract field '{name}' must contain finite values")
+    if name == "normalization_std" and any(value <= 0 for value in result):
+        raise ArtifactError("Feature contract normalization_std values must be greater than zero")
+    return result  # type: ignore[return-value]
+
+
+def load_track_b_feature_contract(path: Path) -> TrackBFeatureContract:
+    """Load and validate the proven checkpoint-specific feature contract."""
+    path = _require_file(Path(path), "Track B feature contract")
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ArtifactError(f"Could not read Track B feature contract '{path}': {exc}") from exc
+    if not isinstance(data, dict):
+        raise ArtifactError(f"Track B feature contract must contain a JSON object: {path}")
+
+    required_strings = (
+        "checkpoint", "backbone", "backbone_weights", "backbone_weights_filename",
+        "backbone_weights_sha256", "token_dtype", "token_device", "source_cache",
+        "cache_generation_timestamp",
+    )
+    for name in required_strings:
+        if not isinstance(data.get(name), str) or not data[name].strip():
+            raise ArtifactError(f"Feature contract field '{name}' must be a non-empty string")
+    sha256 = data["backbone_weights_sha256"]
+    if re.fullmatch(r"[0-9a-fA-F]{64}", sha256) is None:
+        raise ArtifactError("Feature contract SHA-256 must be 64 hexadecimal characters")
+    if data["token_dtype"] != "float32":
+        raise ArtifactError("Feature contract token_dtype must be 'float32'")
+    if data["token_device"] != "cpu":
+        raise ArtifactError("Feature contract token_device must be 'cpu'")
+
+    positive_fields = ("image_size", "token_count", "token_dim", "temporal_window", "temporal_stride")
+    for name in positive_fields:
+        value = data.get(name)
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            raise ArtifactError(f"Feature contract field '{name}' must be a positive integer")
+    grid = data.get("grid_hw")
+    if not isinstance(grid, list) or len(grid) != 2 or any(
+        isinstance(value, bool) or not isinstance(value, int) or value <= 0 for value in grid
+    ):
+        raise ArtifactError("Feature contract field 'grid_hw' must contain two positive integers")
+    if data["token_count"] != grid[0] * grid[1]:
+        raise ArtifactError("Feature contract token_count must equal grid_hw product")
+
+    return TrackBFeatureContract(
+        checkpoint=data["checkpoint"], backbone=data["backbone"],
+        backbone_weights=data["backbone_weights"],
+        backbone_weights_filename=data["backbone_weights_filename"],
+        backbone_weights_sha256=sha256.lower(), image_size=data["image_size"],
+        normalization_mean=_contract_float_vector(data, "normalization_mean"),
+        normalization_std=_contract_float_vector(data, "normalization_std"),
+        grid_hw=(grid[0], grid[1]), token_count=data["token_count"],
+        token_dim=data["token_dim"], temporal_window=data["temporal_window"],
+        temporal_stride=data["temporal_stride"], token_dtype=data["token_dtype"],
+        token_device=data["token_device"], source_cache=data["source_cache"],
+        cache_generation_timestamp=data["cache_generation_timestamp"],
+        provenance_note=str(data.get("provenance_note", "")),
     )
 
 
