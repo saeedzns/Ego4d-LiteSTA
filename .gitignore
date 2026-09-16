@@ -5,6 +5,9 @@
 !/.gitignore
 !/README.md
 !/local_extraction/
+!/.dockerignore
+!/deploy/
+!/deploy/**
 
 # === Ignore all files in thesis folder by default ===
 thesis/*
@@ -39,3 +42,5 @@ __pycache__/
 *.pdf
 *.md
 !README.md
+!deploy/**
+deploy/.env
