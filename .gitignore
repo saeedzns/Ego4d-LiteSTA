@@ -27,6 +27,8 @@ local_extraction/*
 !local_extraction/final_scripts/
 !local_extraction/inference/
 !local_extraction/inference/**
+!local_extraction/core/
+!local_extraction/configs/
 
 # === Allow focused inference tests ===
 !/tests/

@@ -16,6 +16,11 @@ docker compose --env-file deploy/.env -f deploy/compose.yaml up -d
 docker compose --env-file deploy/.env -f deploy/compose.yaml ps
 ```
 
+Relative host paths in `deploy/.env` are resolved from the `deploy` directory.
+The example therefore uses `../local_extraction/...` for artifacts stored inside
+this repository. Set `TOKENIZER_WEIGHTS` to the absolute host path of the
+machine-local `resnet18-f37072fd.pth` file before starting the service.
+
 Check liveness:
 
 ```powershell
