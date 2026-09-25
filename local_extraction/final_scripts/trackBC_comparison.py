@@ -24,7 +24,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 # Configuration
-WORKSPACE = Path(r"D:\Thesis\Ego4d-LiteSTA")
+WORKSPACE = Path(__file__).resolve().parents[2]
 TRACK_B_METRICS = WORKSPACE / "local_extraction" / "runs" / "Track_B" / "metrics"
 TRACK_C_METRICS = WORKSPACE / "local_extraction" / "runs" / "Track_C" / "metrics"
 OUTPUT_DIR = WORKSPACE / "local_extraction" / "final_scripts" / "comparison_results"

@@ -5,6 +5,9 @@
 !/.gitignore
 !/README.md
 !/local_extraction/
+!/.dockerignore
+!/deploy/
+!/deploy/**
 
 # === Ignore all files in thesis folder by default ===
 thesis/*
@@ -22,6 +25,14 @@ local_extraction/*
 !local_extraction/trackC/
 !local_extraction/labels/
 !local_extraction/final_scripts/
+!local_extraction/inference/
+!local_extraction/inference/**
+!local_extraction/core/
+!local_extraction/configs/
+
+# === Allow focused inference tests ===
+!/tests/
+!/tests/test_inference_artifacts.py
 
 # === Common patterns to ignore everywhere ===
 __pycache__/
@@ -33,3 +44,5 @@ __pycache__/
 *.pdf
 *.md
 !README.md
+!deploy/**
+deploy/.env

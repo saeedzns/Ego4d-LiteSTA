@@ -22,7 +22,7 @@ import matplotlib.dates as mdates
 import numpy as np
 
 # Configuration
-WORKSPACE = Path(r"D:\Thesis\Ego4d-LiteSTA")
+WORKSPACE = Path(__file__).resolve().parents[2]
 TRACK_B_METRICS = WORKSPACE / "local_extraction" / "runs" / "Track_B" / "metrics"
 TRACK_B_CHECKPOINTS = WORKSPACE / "local_extraction" / "runs" / "Track_B" / "checkpoints"
 TRACK_C_METRICS = WORKSPACE / "local_extraction" / "runs" / "Track_C" / "metrics"

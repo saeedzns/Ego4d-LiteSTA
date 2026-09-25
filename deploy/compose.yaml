@@ -1,0 +1,31 @@
+services:
+  inference-api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: ego4d-litesta-inference:latest
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - type: bind
+        source: ${EGO4D_FRAMES_DIR}
+        target: /data/frames
+        read_only: true
+      - type: bind
+        source: ${TRACK_A_CHECKPOINT}
+        target: /app/local_extraction/toolkit_yolo/runs/sta_yolov8s_singlecls_20251113_002330/weights/best.pt
+        read_only: true
+      - type: bind
+        source: ${TRACK_B_CHECKPOINT}
+        target: /app/local_extraction/runs/Track_B/checkpoints/trackB_best_mAP_0.3708_20251225_224220.pt
+        read_only: true
+      - type: bind
+        source: ${TAXONOMY_PATH}
+        target: /app/local_extraction/v2/org_annotations/fho_sta_val_height-540.json
+        read_only: true
+      - type: bind
+        source: ${TOKENIZER_WEIGHTS}
+        target: /artifacts/resnet18-f37072fd.pth
+        read_only: true
+    restart: unless-stopped
+    init: true

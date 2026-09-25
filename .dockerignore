@@ -1,0 +1,16 @@
+**
+
+!deploy/
+!deploy/Dockerfile
+!deploy/requirements.txt
+
+!local_extraction/
+!local_extraction/__init__.py
+!local_extraction/inference/
+!local_extraction/inference/**
+
+!local_extraction/trackB/
+!local_extraction/trackB/__init__.py
+!local_extraction/trackB/trackB_fusion.py
+!local_extraction/trackB/trackB_head.py
+!local_extraction/trackB/trackB_tokenizer.py

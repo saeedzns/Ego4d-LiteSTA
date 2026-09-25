@@ -1,0 +1,9 @@
+{
+  "count": 3352,
+  "mean": 0.308969769291965,
+  "std": 0.4092708906167367,
+  "min": 0.03333333333333333,
+  "max": 4.766666666666667,
+  "source_manifest": "local_extraction/runs/Track_A/trackA_stageB_20251117_184342/head_train.jsonl",
+  "normalization": "(ttc - mean) / std"
+}

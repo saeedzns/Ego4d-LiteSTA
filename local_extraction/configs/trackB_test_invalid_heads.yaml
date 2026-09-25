@@ -1,0 +1,7 @@
+# Test config: fusion.dim=256, fusion.heads=12 (INVALID - should fail)
+_base_: "trackB_resnet18_baseline.yaml"
+
+model:
+  fusion:
+    dim: 256
+    heads: 12  # 256 / 12 = not integer! Should fail
