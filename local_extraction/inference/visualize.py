@@ -163,7 +163,7 @@ def _font(size: int) -> ImageFont.ImageFont:
     try:
         return ImageFont.truetype("DejaVuSans.ttf", size=size)
     except OSError:
-        return ImageFont.load_default()
+        return ImageFont.load_default(size=size)
 
 
 def _intersection_area(a: Box, b: Box) -> int:
@@ -209,9 +209,9 @@ def render_annotated_image(
     image = source.convert("RGB").copy()
     draw = ImageDraw.Draw(image)
     presentation = style == "presentation"
-    font_size = max(18, min(36, min(image.size) // 25)) if presentation else 10
+    font_size = max(20, min(54, min(image.size) // 17)) if presentation else 10
     font = _font(font_size) if presentation else ImageFont.load_default()
-    spacing, padding = (max(4, font_size // 5), max(8, font_size // 3)) if presentation else (2, 5)
+    spacing, padding = (max(5, font_size // 5), max(10, font_size // 3)) if presentation else (2, 5)
     box_width = max(5, min(image.size) // 180) if presentation else 3
     occupied: list[Box] = []
     if not predictions:
@@ -250,7 +250,7 @@ def compose_side_by_side(original: Image.Image, annotated: Image.Image, *, style
     canvas.paste(original.convert("RGB"), (0, header_height))
     canvas.paste(annotated.convert("RGB"), (width, header_height))
     draw = ImageDraw.Draw(canvas)
-    font = (_font(max(18, min(28, header_height * 3 // 5)))
+    font = (_font(max(24, min(36, header_height * 4 // 5)))
             if style == "presentation" else ImageFont.load_default())
     y = max(2, (header_height - getattr(font, "size", 10)) // 2)
     draw.text((12, y), "Original", fill=(255, 255, 255), font=font)

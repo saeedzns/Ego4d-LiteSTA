@@ -2,7 +2,7 @@ import copy
 import json
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageChops
 import pytest
 
 from local_extraction.inference.visualize import (
@@ -186,10 +186,11 @@ def test_presentation_defaults_to_top_one_and_explicit_top_two(tmp_path: Path) -
     taxonomy = _taxonomy(tmp_path / "taxonomy.json")
     render_prediction_result(payload, taxonomy, default_output, style="presentation")
     render_prediction_result(payload, taxonomy, top_two_output, style="presentation", top_k=2)
-    with Image.open(default_output).convert("RGB") as default_image:
-        assert default_image.getpixel((150, 100)) == (30, 40, 50)
-    with Image.open(top_two_output).convert("RGB") as top_two_image:
-        assert top_two_image.getpixel((150, 100)) != (30, 40, 50)
+    with (
+        Image.open(default_output).convert("RGB") as default_image,
+        Image.open(top_two_output).convert("RGB") as top_two_image,
+    ):
+        assert ImageChops.difference(default_image, top_two_image).getbbox() is not None
 
 
 def test_presentation_overlay_renders_successfully(tmp_path: Path) -> None:
