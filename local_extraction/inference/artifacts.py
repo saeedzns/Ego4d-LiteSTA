@@ -9,9 +9,6 @@ import re
 from pathlib import Path
 from typing import Any, Mapping
 
-import torch
-
-
 class ArtifactError(RuntimeError):
     """Raised when a required inference artifact is missing or inconsistent."""
 
@@ -238,6 +235,8 @@ def _id_list(payload: Mapping[str, Any], name: str) -> tuple[int, ...]:
 
 def load_track_b_artifacts(path: Path) -> TrackBArtifactMetadata:
     """Load a Track B checkpoint on CPU and validate its inspection metadata."""
+    import torch
+
     path = _require_file(Path(path), "Track B checkpoint")
     try:
         checkpoint = torch.load(str(path), map_location="cpu", weights_only=False)

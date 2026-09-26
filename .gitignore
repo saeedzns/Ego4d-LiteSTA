@@ -46,3 +46,8 @@ __pycache__/
 !README.md
 !deploy/**
 deploy/.env
+
+# === Allow portfolio/documentation assets ===
+!/docs/
+!/docs/assets/
+!/docs/assets/**
