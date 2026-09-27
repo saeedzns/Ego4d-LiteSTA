@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   tests:
-    name: Production inference tests
+    name: Artifact-independent inference tests
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -46,8 +46,8 @@ jobs:
       - name: Compile production inference package
         run: python -m compileall -q local_extraction/inference
 
-      - name: Run production inference tests
-        run: python -m pytest tests -q
+      - name: Run artifact-independent inference tests
+        run: python -m pytest tests -q -m "not requires_model_artifacts"
 
   docker-build:
     name: Validate and build production container

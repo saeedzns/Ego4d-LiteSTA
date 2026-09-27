@@ -42,6 +42,7 @@ def _write_modified_checkpoint(tmp_path: Path, **train_changes) -> Path:
     return checkpoint
 
 
+@pytest.mark.requires_model_artifacts
 def test_real_checkpoint_reconstructs_expected_projector_and_fusion(fusion: TrackBFeatureFusion) -> None:
     assert tuple(fusion.projector.weight.shape) == (256, 512)
     assert fusion.fusion.cfg.dim == 256
@@ -52,6 +53,7 @@ def test_real_checkpoint_reconstructs_expected_projector_and_fusion(fusion: Trac
     assert fusion.fusion.cfg.fgtp_stride_t == 2
 
 
+@pytest.mark.requires_model_artifacts
 def test_models_are_loaded_once_on_configured_device_and_eval(fusion: TrackBFeatureFusion) -> None:
     assert fusion.projector.training is False
     assert fusion.fusion.training is False
@@ -61,6 +63,7 @@ def test_models_are_loaded_once_on_configured_device_and_eval(fusion: TrackBFeat
     assert fusion.fusion is fusion.fusion
 
 
+@pytest.mark.requires_model_artifacts
 def test_valid_contract_tokens_return_expected_shapes(fusion: TrackBFeatureFusion) -> None:
     result = fusion.fuse(_tokens())
 
@@ -73,6 +76,7 @@ def test_valid_contract_tokens_return_expected_shapes(fusion: TrackBFeatureFusio
 
 
 @pytest.mark.parametrize("time_length", [1, 2, 5, 16])
+@pytest.mark.requires_model_artifacts
 def test_short_temporal_context_is_supported(fusion: TrackBFeatureFusion, time_length: int) -> None:
     result = fusion.fuse(_tokens(time_length))
 
@@ -80,6 +84,7 @@ def test_short_temporal_context_is_supported(fusion: TrackBFeatureFusion, time_l
     assert result.fused_video_tokens.shape == (49, 256)
 
 
+@pytest.mark.requires_model_artifacts
 def test_repeated_forward_is_deterministic(fusion: TrackBFeatureFusion) -> None:
     tokens = _tokens()
     first = fusion.fuse(tokens)
@@ -89,6 +94,7 @@ def test_repeated_forward_is_deterministic(fusion: TrackBFeatureFusion) -> None:
     assert torch.equal(first.fused_video_tokens, second.fused_video_tokens)
 
 
+@pytest.mark.requires_model_artifacts
 def test_forward_runs_without_gradients(fusion: TrackBFeatureFusion) -> None:
     result = fusion.fuse(_tokens(1))
 
@@ -96,11 +102,13 @@ def test_forward_runs_without_gradients(fusion: TrackBFeatureFusion) -> None:
     assert result.fused_video_tokens.requires_grad is False
 
 
+@pytest.mark.requires_model_artifacts
 def test_wrong_feature_dimension_is_rejected(fusion: TrackBFeatureFusion) -> None:
     with pytest.raises(FusionError, match="does not match expected"):
         fusion.fuse(_tokens(feature_dim=256))
 
 
+@pytest.mark.requires_model_artifacts
 def test_wrong_grid_and_token_count_are_rejected(fusion: TrackBFeatureFusion) -> None:
     bad = ExtractedTokens(
         image_tokens=torch.randn(64, 512),
@@ -112,6 +120,7 @@ def test_wrong_grid_and_token_count_are_rejected(fusion: TrackBFeatureFusion) ->
         fusion.fuse(bad)
 
 
+@pytest.mark.requires_model_artifacts
 def test_empty_or_malformed_temporal_inputs_are_rejected(fusion: TrackBFeatureFusion) -> None:
     empty = ExtractedTokens(torch.randn(49, 512), torch.empty(0, 49, 512), (7, 7))
     malformed = ExtractedTokens(torch.randn(49, 512), torch.randn(49, 512), (7, 7))
@@ -122,11 +131,13 @@ def test_empty_or_malformed_temporal_inputs_are_rejected(fusion: TrackBFeatureFu
         fusion.fuse(malformed)
 
 
+@pytest.mark.requires_model_artifacts
 def test_too_long_temporal_context_is_rejected(fusion: TrackBFeatureFusion) -> None:
     with pytest.raises(FusionError, match="1 <= T <= 16"):
         fusion.fuse(_tokens(17))
 
 
+@pytest.mark.requires_model_artifacts
 def test_non_float32_inputs_are_rejected(fusion: TrackBFeatureFusion) -> None:
     tokens = _tokens()
     tokens = ExtractedTokens(tokens.image_tokens.double(), tokens.video_tokens, tokens.grid_hw)
@@ -135,6 +146,7 @@ def test_non_float32_inputs_are_rejected(fusion: TrackBFeatureFusion) -> None:
         fusion.fuse(tokens)
 
 
+@pytest.mark.requires_model_artifacts
 def test_thesis_reconstruction_is_numerically_equivalent(fusion: TrackBFeatureFusion) -> None:
     from local_extraction.trackB.trackB_fusion import FusionConfig, TrackBFusion
 
@@ -212,6 +224,7 @@ def test_missing_fusion_state_is_rejected(tmp_path: Path) -> None:
         ("fgtp_stride_t", 0, "fgtp_stride_t must be a positive integer"),
     ],
 )
+@pytest.mark.requires_model_artifacts
 def test_fusion_metadata_is_required_and_validated(tmp_path: Path, field, value, message) -> None:
     changes = {field: value}
     if value is None:

@@ -128,11 +128,9 @@ def test_nonfinite_logits_are_rejected() -> None:
         _assembler().assemble((raw,))
 
 
+@pytest.mark.requires_model_artifacts
 def test_real_checkpoint_id_maps_and_ttc_stats_load_when_available() -> None:
     config = InferenceConfig()
-    if not config.track_b_checkpoint.exists():
-        pytest.skip("Track B checkpoint is unavailable in this test environment")
-
     assembler = PredictionAssembler(config)
 
     assert len(assembler.noun_id_list) == 118
