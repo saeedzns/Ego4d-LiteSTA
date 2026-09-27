@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: Artifact-independent inference tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: deploy/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install \
+            --index-url https://download.pytorch.org/whl/cpu \
+            torch==2.9.0 torchvision==0.24.0
+          python -m pip install \
+            -r deploy/requirements.txt \
+            pytest==9.1.1
+
+      - name: Compile production inference package
+        run: python -m compileall -q local_extraction/inference
+
+      - name: Run artifact-independent inference tests
+        run: python -m pytest tests -q -m "not requires_model_artifacts"
+
+  docker-build:
+    name: Validate and build production container
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate Docker Compose configuration
+        run: docker compose --env-file deploy/.env.example -f deploy/compose.yaml config
+
+      - name: Build production image
+        run: docker build -f deploy/Dockerfile -t ego4d-litesta-ci .

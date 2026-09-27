@@ -8,6 +8,9 @@
 !/.dockerignore
 !/deploy/
 !/deploy/**
+!/.github/
+!/.github/workflows/
+!/.github/workflows/**
 
 # === Ignore all files in thesis folder by default ===
 thesis/*

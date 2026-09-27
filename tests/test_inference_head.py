@@ -93,6 +93,7 @@ def _direct_thesis_output(payload: dict, fused: FusedTokens, candidates: tuple[D
         return thesis(image_pooled, video_pooled)
 
 
+@pytest.mark.requires_model_artifacts
 def test_real_head_architecture_and_mode(head: TrackBInferenceHead, checkpoint_payload: dict) -> None:
     state = checkpoint_payload["head"]
     assert head.head.training is False
@@ -105,10 +106,12 @@ def test_real_head_architecture_and_mode(head: TrackBInferenceHead, checkpoint_p
     assert head.num_ttc_bins == 0
 
 
+@pytest.mark.requires_model_artifacts
 def test_zero_candidates_returns_empty(head: TrackBInferenceHead) -> None:
     assert head.predict((), _fused(), IMAGE_SIZE) == ()
 
 
+@pytest.mark.requires_model_artifacts
 def test_raw_outputs_preserve_candidate_order_and_shapes(head: TrackBInferenceHead) -> None:
     candidates = _candidates()
     outputs = head.predict(candidates, _fused(), IMAGE_SIZE)
@@ -148,6 +151,7 @@ def test_reversed_box_uses_thesis_empty_roi_mean() -> None:
     assert torch.equal(_thesis_pool(tokens, (400.0, 300.0, 100.0, 100.0)), tokens.mean(dim=0))
 
 
+@pytest.mark.requires_model_artifacts
 def test_production_outputs_match_thesis_roi_and_head_for_all_candidates(
     head: TrackBInferenceHead,
     checkpoint_payload: dict,
@@ -165,6 +169,7 @@ def test_production_outputs_match_thesis_roi_and_head_for_all_candidates(
         assert output.ttc_bin_logits is None
 
 
+@pytest.mark.requires_model_artifacts
 def test_synthetic_milestone6_path_uses_real_head_without_decoding_or_ranking(head: TrackBInferenceHead) -> None:
     candidates = _candidates()
     outputs = head.predict(candidates, FusedTokens(_cell_tokens(), _cell_tokens() + 1000.0), IMAGE_SIZE)
@@ -177,11 +182,13 @@ def test_synthetic_milestone6_path_uses_real_head_without_decoding_or_ranking(he
 
 
 @pytest.mark.parametrize("image_size", [(0, 640), (480, 0), (-1, 640)])
+@pytest.mark.requires_model_artifacts
 def test_invalid_image_size_is_rejected(head: TrackBInferenceHead, image_size) -> None:
     with pytest.raises(HeadInferenceError, match="must be positive"):
         head.predict(_candidates(), _fused(), image_size)
 
 
+@pytest.mark.requires_model_artifacts
 def test_wrong_fused_shape_is_rejected(head: TrackBInferenceHead) -> None:
     bad = FusedTokens(torch.randn(64, 256), torch.randn(64, 256))
 
@@ -189,6 +196,7 @@ def test_wrong_fused_shape_is_rejected(head: TrackBInferenceHead) -> None:
         head.predict(_candidates(), bad, IMAGE_SIZE)
 
 
+@pytest.mark.requires_model_artifacts
 def test_wrong_fused_dtype_is_rejected(head: TrackBInferenceHead) -> None:
     bad = FusedTokens(torch.randn(49, 256).double(), torch.randn(49, 256))
 
@@ -196,6 +204,7 @@ def test_wrong_fused_dtype_is_rejected(head: TrackBInferenceHead) -> None:
         head.predict(_candidates(), bad, IMAGE_SIZE)
 
 
+@pytest.mark.requires_model_artifacts
 def test_malformed_candidate_is_rejected(head: TrackBInferenceHead) -> None:
     with pytest.raises(HeadInferenceError, match="DetectionCandidate"):
         head.predict(("bad",), _fused(), IMAGE_SIZE)  # type: ignore[arg-type]
@@ -206,6 +215,7 @@ def test_detection_candidate_rejects_nonfinite_box_before_head() -> None:
         DetectionCandidate((0.0, 0.0, float("nan"), 1.0), 0.1)
 
 
+@pytest.mark.requires_model_artifacts
 def test_head_forward_is_deterministic_and_without_gradients(head: TrackBInferenceHead) -> None:
     fused = _fused()
     first = head.predict(_candidates(), fused, IMAGE_SIZE)
@@ -232,6 +242,7 @@ def test_checkpoint_directory_is_rejected(tmp_path: Path) -> None:
         TrackBInferenceHead(_config_with_checkpoint(checkpoint))
 
 
+@pytest.mark.requires_model_artifacts
 def test_missing_head_state_is_rejected(tmp_path: Path, checkpoint_payload: dict) -> None:
     payload = dict(checkpoint_payload)
     payload.pop("head")
@@ -240,6 +251,7 @@ def test_missing_head_state_is_rejected(tmp_path: Path, checkpoint_payload: dict
         TrackBInferenceHead(_config_with_checkpoint(_copy_checkpoint(tmp_path, payload)))
 
 
+@pytest.mark.requires_model_artifacts
 def test_missing_train_metadata_is_rejected(tmp_path: Path, checkpoint_payload: dict) -> None:
     payload = dict(checkpoint_payload)
     payload["train_config"] = {}
@@ -248,6 +260,7 @@ def test_missing_train_metadata_is_rejected(tmp_path: Path, checkpoint_payload: 
         TrackBInferenceHead(_config_with_checkpoint(_copy_checkpoint(tmp_path, payload)))
 
 
+@pytest.mark.requires_model_artifacts
 def test_malformed_head_tensor_dimensions_are_rejected(tmp_path: Path, checkpoint_payload: dict) -> None:
     payload = dict(checkpoint_payload)
     payload["head"] = dict(checkpoint_payload["head"])
@@ -257,6 +270,7 @@ def test_malformed_head_tensor_dimensions_are_rejected(tmp_path: Path, checkpoin
         TrackBInferenceHead(_config_with_checkpoint(_copy_checkpoint(tmp_path, payload)))
 
 
+@pytest.mark.requires_model_artifacts
 def test_noun_id_output_mismatch_is_rejected(tmp_path: Path, checkpoint_payload: dict) -> None:
     payload = dict(checkpoint_payload)
     payload["noun_id_list"] = list(checkpoint_payload["noun_id_list"])[:-1]
@@ -265,6 +279,7 @@ def test_noun_id_output_mismatch_is_rejected(tmp_path: Path, checkpoint_payload:
         TrackBInferenceHead(_config_with_checkpoint(_copy_checkpoint(tmp_path, payload)))
 
 
+@pytest.mark.requires_model_artifacts
 def test_verb_id_output_mismatch_is_rejected(tmp_path: Path, checkpoint_payload: dict) -> None:
     payload = dict(checkpoint_payload)
     payload["verb_id_list"] = list(checkpoint_payload["verb_id_list"])[:-1]

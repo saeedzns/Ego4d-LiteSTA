@@ -69,11 +69,9 @@ def test_missing_ttc_file_raises_clear_error(tmp_path: Path) -> None:
         load_ttc_stats(tmp_path / "missing.json")
 
 
+@pytest.mark.requires_model_artifacts
 def test_real_track_b_checkpoint_exposes_consistent_mappings() -> None:
     checkpoint = InferenceConfig().track_b_checkpoint
-    if not checkpoint.exists():
-        pytest.skip("Track B checkpoint is unavailable in this test environment")
-
     metadata = load_track_b_artifacts(checkpoint)
 
     assert metadata.num_noun_classes == 118
