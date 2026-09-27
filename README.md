@@ -1,5 +1,7 @@
 # Ego4D-LiteSTA
 
+[![CI](https://github.com/saeedzns/Ego4d-LiteSTA/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/saeedzns/Ego4d-LiteSTA/actions/workflows/ci.yml)
+
 Ego4D-LiteSTA is a lightweight pipeline for short-term object interaction anticipation in egocentric video. Given a target Ego4D frame and its temporal context, it predicts **which object** will become active, **what action** will occur, and **when** contact is expected.
 
 The project began as an MSc Data Science thesis and was subsequently productionized as a tested local inference system with a CLI, HTTP API, container deployment, artifact validation, and qualitative visualization.
