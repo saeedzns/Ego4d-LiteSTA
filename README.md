@@ -215,7 +215,7 @@ Local end-to-end deployment validation also covered:
 - a successful `GET /health` request;
 - a successful `POST /predict` request on a real Ego4D frame.
 
-These checks describe local validation, not a hosted public service. No GitHub Actions workflow is currently configured.
+These checks describe local validation, not a hosted public service. GitHub Actions also validates artifact-independent inference tests and the production Docker build; the latest verified `main` run passed.
 
 ## Qualitative Research Results
 
